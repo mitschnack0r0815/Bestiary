@@ -145,24 +145,61 @@ You prepare **three squads**, each 3 to 7 cards in order, front to back, with on
 attacked first, except by Assassins (back row) and splash. A card can be in more than one
 squad. You can change your squads any time, but a duel uses the squad you locked in for it.
 
-### 5.2 Battle simulation
+### 5.2 Fight rules (proposal)
 
-Deterministic, so both clients produce the same fight without talking during it:
+Deterministic, so both clients produce the same fight without talking during it: no damage
+rolls at all, and an own seeded random generator (seeded from the duel id, not `math.random`)
+only breaks ties and decides chance abilities. Same code and protocol version on both sides;
+the result comes from the simulation, never from the network.
 
-- **Own random generator** (seeded, not `math.random`), seeded from the duel id.
-- Turns: everyone acts in speed order (Assassins first). Targets by type: Armor and Magic
-  hit the frontmost alive enemy (Magic splashes onto the one behind it), Assassins hit the
-  backmost (or the lowest health enemy, to be tested). Armor takes a flat amount off every
-  physical hit; Magic ignores it.
-- Abilities trigger by rules: on first attack, below X% HP, every N turns, on death.
-- At most 50 rounds; then whoever has more health left wins.
-- Output: a list of events (who hit whom, for how much, who died) the UI plays back as a
-  replay. The result comes from the simulation, never from the network.
+**Stats.** Every card has **Health**, **Attack** and **Speed**; Armor cards also have
+**Armor**. The power budget (3.2) is split by combat type, then nudged by family:
 
-Both sides run the same code and the same version. Duel messages carry a protocol version like
-Quiz Duel, and mismatches are refused.
+| Type | Health | Attack | Speed | Armor |
+|---|---|---|---|---|
+| Armor | high | low | slow | 40% of its Attack |
+| Magic | low | high | medium | none |
+| Assassin | medium-low | medium | fast | none |
 
-### 5.3 How a fight plays out, and where the strategy is (to work out next)
+**Start of the fight.** Squads stand in their order, position 1 in front. The twist (6.2) and
+leader abilities (6.1) apply, then "start of fight" abilities.
+
+**Rounds.** At most 20. Each round every living card acts once, fastest first. Ties: Assassin
+before Magic before Armor, then the front-most, then a seeded coin flip. A card that dies
+before its turn doesn't act.
+
+**Actions by type:**
+- **Armor:** one hit for its Attack against the enemy's **front** card.
+- **Magic:** one spell for its Attack against the enemy's **front** card, **ignoring armor**,
+  plus a **splash** for half its Attack on the card right behind it (also ignoring armor).
+- **Assassin:** **two strikes** of 60% of its Attack each against the enemy's **back-most**
+  card. If the first strike kills, the second goes to the new back-most.
+
+**Damage.** Physical hits (Armor, Assassin) lose the target's Armor value per hit, minimum 1.
+Magic ignores armor. So armor cuts many small hits a lot and single big hits a little: an
+Assassin's 2 x 13 against Armor 7 is 2 x 6, a third of a 26-point hit gone twice.
+
+**Abilities.** One trait per card from its family's pool, plus the leader ability. Triggers:
+start of fight, on attack, below 50% health (once), on death, every 3rd round. Chance-based
+abilities use the seeded generator.
+
+**End.** A side with no living cards loses. After 20 rounds: the side with more health left in
+percent of its total wins; equal is a draw.
+
+**After the fight.** Each card's health lost in percent sets its stamina loss (6.3).
+
+**Why the triangle holds:**
+- **Armor beats Assassin:** two small strikes per turn lose the armor value twice.
+- **Assassin beats Magic:** Assassins act first and go for the back row, where the fragile
+  casters stand, before those cast even once.
+- **Magic beats Armor:** spells ignore armor, and the splash hits the second tank standing
+  right behind the first.
+- **Placement adds counterplay:** an Armor card at the very back is a bodyguard against
+  Assassins, who then strike armor instead of casters. A Magic card in front is safe from
+  Assassins for a while but takes every Armor and Magic hit. Mixed squads soften every
+  counter.
+
+### 5.3 Where the strategy is
 
 This decides whether building a squad is interesting, and it's also the answer to balancing
 duels (6). Levers a player can pull, all before the fight (it's an auto battler):
@@ -185,10 +222,48 @@ duels (6). Levers a player can pull, all before the fight (it's an auto battler)
   cards or five weaker ones becomes a real choice. Stars and rarity raise power, so they
   matter by making a card better per cost, not just bigger.
 
-Next step: write the fight rules out exactly (turn order, targeting, armor, splash, ability
-triggers) and test them headless with many random squads: the triangle has to hold (each type
-beats the one it should), mixed squads should land in between, and no single squad should beat
-everything.
+Next step: implement the rules from 5.2 and test them headless with many random squads: the
+triangle has to hold (each type beats the one it should), mixed squads should land in between,
+and no single squad should beat everything.
+
+### 5.4 Example fight
+
+Twist: Calm Waters (none). Numbers are illustrative.
+
+**Alice's Armor wall**, front to back:
+1. Skeletal Warder (Undead, Armor, **leader**: all Armor cards +2 armor): Health 160, Attack
+   14, Speed 40, Armor 6+2 = 8
+2. Harvest Watcher (Mechanical, Armor): Health 110, Attack 12, Speed 35, Armor 5+2 = 7
+3. Defias Pillager (Humanoid, Magic): Health 55, Attack 26, Speed 60
+
+**Bob's Assassin pack**, front to back:
+1. Plainstrider (Beast, Assassin): Health 60, Attack 18 (strikes 11), Speed 90
+2. Kolkar Centaur (Humanoid, Assassin, **leader**: Assassins +10 speed in round 1): Health 80,
+   Attack 22 (strikes 13), Speed 85
+3. Thunderhawk Cloudscraper (Beast, Assassin): Health 65, Attack 20 (strikes 12), Speed 88
+
+**Round 1.** Order: Plainstrider 100, Thunderhawk 98, Kolkar 95, Pillager 60, Warder 40,
+Watcher 35.
+- The Assassins go for Alice's back-most card, the **Pillager** (no armor): 11+11, then 12+12,
+  then 13 kills it at 9 health. Kolkar's second strike goes to the new back-most, the Watcher:
+  13 - 7 = 6. **The Pillager dies without casting once** (Assassin beats Magic).
+- Warder hits Bob's front, the Plainstrider, for 14 (60 → 46); Watcher hits it for 12 (→ 34).
+
+**Rounds 2-5.** The Assassins now hit the armored Watcher: 4+4, 5+5, 6+6 = **30 per round
+instead of 72** without armor (Armor beats Assassin). Meanwhile the tanks hit 26 per round:
+the Plainstrider dies in round 3, then the Kolkar takes hits. The Watcher falls in round 5.
+
+**Rounds 6-12.** Only the Warder is left, Armor 8: the two Assassins get 8 and 10 through per
+round. The Warder kills the Kolkar in round 7 (the leader's bonus was round 1 only anyway)
+and the Thunderhawk in round 12.
+
+**Alice wins** with the Warder at 84 of 160 health. Stamina: Warder -28 (lost 47%), Watcher
+and Pillager -60 (died).
+
+**Had Bob sent his Magic squad instead:** spells ignore the Warder's 8 armor, and every splash
+hits the Watcher right behind it, so both tanks melt at once. Alice's only answer, the
+Pillager, gets a single cast off before the casters trade it away. That's the hidden pick:
+Alice built well against Assassins and would be crushed by Magic.
 
 ## 6. Duels
 
@@ -224,7 +299,7 @@ your three squads can be built for a different cap, or you rebuild before lockin
 
 Rating: simple Elo per opponent and overall, per character.
 
-## 6.1 Ideas from Warhammer Warcry
+### 6.1 Ideas from Warhammer Warcry
 
 Warcry's roster building fits this game. What we take from it:
 
@@ -285,8 +360,7 @@ sending your best ones, so collection depth matters:
   **gone**. It moves to a "Hall of the Fallen" (per account): character, level, days survived,
   card count, best card, duel record. You can start a new one.
 - Hardcore means complete loss, on purpose; that's its only death penalty.
-- **Normal bestiaries:** dying drains stamina (6.3) from the cards in your squads (proposal:
-  -50 each), so some may end up exhausted for a couple of duels. No cards are lost.
+- **Normal bestiaries:** no penalty when you die.
 
 ## 8. Saved data
 
@@ -342,14 +416,14 @@ both sides for the same seed).
 - Stamina per card: drained by health lost in duels, refilled by resting, 2 duels out at 0
   (6.3).
 - You see nothing of the opponent's squads before the fight, only the twist (6).
-- Death: hardcore loses the whole bestiary; normal drains your squads' stamina (7).
+- Death: hardcore loses the whole bestiary; normal has no penalty (7).
 
 ## 12. Open questions
 
-1. Exact fight rules (5.2), then balance with headless runs.
+1. Fight rules: the proposal in 5.2, then balance with headless runs.
 2. Combat type from watching the mob, or only from family and NPC id? (3.5)
 3. Single fight or best of 3 (6).
-4. Cap sizes (6); stamina numbers (6.3, 7).
+4. Cap sizes (6); stamina numbers (6.3).
 5. Stars: how many copies per star (3.3), after 1.
 
 ## 13. Mockup
