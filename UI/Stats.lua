@@ -9,7 +9,7 @@ local TOP = 5 -- entries per leaderboard
 local INSET = C_XMLUtil and C_XMLUtil.GetTemplateInfo and C_XMLUtil.GetTemplateInfo("InsetFrameTemplate")
 	and "InsetFrameTemplate" or nil
 
-local page = ns.AddPage("Stats", "Interface\\Icons\\INV_Misc_Book_04", 5)
+local page = ns.AddPage("Stats", "Interface\\Icons\\INV_Misc_Book_04", 6)
 
 local title = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 title:SetPoint("TOPLEFT", 72, -34)

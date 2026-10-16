@@ -7,7 +7,7 @@ local TEXT_WIDTH = WIDTH - 70
 local INSET = C_XMLUtil and C_XMLUtil.GetTemplateInfo and C_XMLUtil.GetTemplateInfo("InsetFrameTemplate")
 	and "InsetFrameTemplate" or nil
 
-local page = ns.AddPage("Info", "Interface\\Icons\\INV_Scroll_03", 6)
+local page = ns.AddPage("Info", "Interface\\Icons\\INV_Scroll_03", 7)
 
 local title = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 title:SetPoint("TOPLEFT", 72, -34)
@@ -97,13 +97,19 @@ local function Sections()
 
 	Section("Leaders", {
 		"Only named mobs lead: rares, rare elites, bosses, and known named mobs like Hogger or Mor'Ladim. A named card always leads its squad and wears the dragon ring.",
+		"Your first leader is you: every character starts with a card of themselves. It leads like a named card but is only as strong as a common mob's card and never gains stars. Its type comes from your class.",
 		"A squad doesn't need a leader, but can have at most one. The leader's bonus goes to allies of its combat type (see above).",
 	})
 
 	Section("Squads", {
-		("You build three squads of %d to %d cards, front to back. Before a duel you pick one in secret; you can switch until you press Ready."):format(ns.MIN_SQUAD, ns.MAX_SQUAD),
-		("A squad's power (the sum of its cards) must fit under the cap of %d. No card may be over 40%% of the cap, and at most one named card."):format(ns.POWER_CAP),
+		("You build three squads of at least %d cards, front to back. Before a duel you pick one in secret; you can switch until you press Ready."):format(ns.MIN_SQUAD),
+		("Beyond that only power counts: the sum of a squad's cards must fit under the cap of %d. And at most one named card (the leader)."):format(ns.POWER_CAP),
 		"Where a card stands matters: the front takes the Tank and Mage hits, the back takes the Assassin strikes.",
+	})
+
+	Section("Friends and duels", {
+		"Only Bestiary friends duel each other and share the board. Add a friend by name on the Board tab: they get a request and have to say yes.",
+		"Challenge a friend on the Duel tab (type their name or target them) or click them on the Board tab. They pick a squad first, in secret; then you pick yours. Both clients play the same fight.",
 	})
 
 	Section("The fight", {

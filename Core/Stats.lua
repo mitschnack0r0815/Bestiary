@@ -10,6 +10,10 @@ local _, ns = ...
 local function Stats()
 	BestiaryChar.stats = BestiaryChar.stats or {}
 	local stats = BestiaryChar.stats
+	if not stats.real then
+		-- Duel stats from the mockup's made-up cards don't count: start over once (hunting stays)
+		stats.duels, stats.cards, stats.foes, stats.real = nil, nil, nil, true
+	end
 	stats.duels = stats.duels or { wins = 0, losses = 0, draws = 0, streak = 0, bestStreak = 0, squads = {}, twists = {} }
 	stats.cards = stats.cards or {}
 	stats.foes = stats.foes or {}
@@ -18,9 +22,9 @@ local function Stats()
 end
 ns.Stats = Stats
 
--- A card's key: real cards by NPC id, made-up ones by name
+-- A card's key: real cards by NPC id, training cards by name
 function ns.StatKey(card)
-	return card.npcId and ("npc" .. card.npcId) or ("mock:" .. card.name)
+	return card.npcId and ("npc" .. card.npcId) or ("card:" .. card.name)
 end
 
 local function Entry(list, card)
@@ -128,6 +132,18 @@ function ns.RecordDuel(events, winner, sides, squadName, twist)
 	if best then
 		best.best = best.best + 1
 	end
+	if ns.Refresh then
+		ns.Refresh()
+	end
+end
+
+-- A duel won because the other player forfeited (cheated, or didn't show their squad)
+function ns.RecordForfeit(name)
+	local duels = Stats().duels
+	duels.wins = duels.wins + 1
+	duels.forfeits = (duels.forfeits or 0) + 1
+	duels.streak = math.max(0, duels.streak) + 1
+	duels.bestStreak = math.max(duels.bestStreak, duels.streak)
 	if ns.Refresh then
 		ns.Refresh()
 	end

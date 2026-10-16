@@ -59,6 +59,10 @@ client computes the same numbers:
 - **Power budget** from classification and stars only; **the mob's level doesn't matter**
   (decided), so a Young Wolf can be as good as a Searing Infernal of the same rarity:
   `budget = base * rarityFactor * starFactor`
+  The **power** on the card (what counts against the cap) reads like a level (decided): the
+  budget scaled to **0-63**, where a Legendary card with 5 stars is 63. A common 1-star card
+  is 13, elite 21, rare 24, rare elite 32, boss 39; each star adds about 15%. The cap is
+  110 (was 500 before the rescale; the same squads fit). Stats still come from the budget.
   rarityFactor: normal 1, elite 1.6, rare 1.8, rare elite 2.4, boss 3.
   Stars 1-5: +15% each.
 - The budget is split into **Attack / Health / Speed** by family (beasts fast, undead tanky,
@@ -104,7 +108,7 @@ From `UnitCreatureType`. Critters and "Not specified" don't drop cards.
 | Giant | Very tanky, slow | Stomp (stun) | +20% / +40% health, -1 speed |
 | Mechanical | Armored | Self-Repair, Overcharge | take 10% / 20% less damage |
 
-**Implemented** (`Mock/Fight.lua`): with 2 cards of a family in the squad they get the first
+**Implemented** (`Core/Fight.lua`): with 2 cards of a family in the squad they get the first
 bonus, with 4 or more the second; only the cards of that family get it. Speed bonuses are flat
 since speed runs 1-10. Shown on the Squads tab under the type counts (what each bonus does) and
 on the Duel tab under each squad and when both lock in (family and count). Numbers are
@@ -139,6 +143,14 @@ the counters come from how each type fights (5.2), not from a "beats" table:
   a full counter squad wins about 80% at equal power; to be tuned in the headless tests).
 
 **Which type a card gets:** from what the mob did while you fought it (4.0).
+
+### 3.6 Your own card (decided)
+
+Every character starts with a card of **themselves**, created on first login with the addon:
+your name, your own 3D model as the portrait, family Humanoid, type from your class (Warrior
+and Paladin Tank, Rogue and Hunter Assassin, Priest and Druid Healer, Mage, Warlock and Shaman
+Mage). It counts as **named**, so it's your first leader, but it's **not strong**: Common
+rarity, 1 star, it never gains stars. Saved under NPC id 0 (`Core/Squads.lua`).
 
 ## 4. Getting cards
 
@@ -218,7 +230,7 @@ Dropped for now: unclear what it would add. Can come back if cards need another 
 
 ### 5.1 Squads
 
-You prepare **three squads**, each 3 to 7 cards in order, front to back. **Leaders**
+You prepare **three squads**, each **at least 3 cards** in order, front to back; beyond that only the power cap counts (decided; at most 8 fit, since the weakest card has power 13). **Leaders**
 (decided): only cards of **named mobs** lead, a named card always leads its squad, and a squad
 holds at most one; a squad doesn't need a leader (decided: named cards are hard to get), but at most one. The game has no
 "named" flag, so named means: **Rare, Rare Elite and Boss** (skull level, or in the boss
@@ -368,20 +380,40 @@ Alice built well against Assassins and would be crushed by Mage.
 ## 6. Duels
 
 Both players pick one of their three squads **without seeing the other's pick**. To keep it
-hidden even though the addon sends everything over whispers, picks are sealed first and only
-opened once both are in (commit and reveal):
+hidden even though the addon sends everything over whispers, it uses a commit and reveal with
+as few messages as possible: **4 whispers per duel** (implemented, `Core/Duel.lua`,
+`Core/Comm.lua`):
 
-1. A challenges B. A picks a squad and sends only a **seal** of it: a hash of the squad data
-   plus a random secret.
-2. B accepts, picks a squad and sends its seal.
-3. Once A has B's seal, A sends the real squad and the secret; B does the same once it has
-   A's. Each side checks the other's squad matches its seal, so nobody can switch after
-   seeing the other's pick.
-4. Both simulate with the duel id as the seed and get the same result, then store the result
-   and the replay.
+1. **A → B `C|version|id|nonce`**: the challenge. The nonce sets the twist, so both see it
+   before picking.
+2. **B → A `A|id|commit`**: B accepted and picked in secret. The commit is a hash of B's squad
+   plus a secret salt, so B can't change it any more.
+3. **A → B `R|id|squad`**: A picks and shows its squad right away. No hash needed: B is already
+   bound.
+4. **B → A `S|id|squad|salt`**: B shows its squad; A checks it against the commit.
 
-Nobody needs to be online at the same time; every step waits until the other side is back
-(like Quiz Duel). A squad snapshot is about 150 bytes, a seal about 20.
+Both clients then run the same fight with the challenger as side 1 and a seed from the nonce
+and the salt (neither side could choose it), so **no result is sent**. Also `D|id|reason`
+(declined, busy, version) and `X|id` (cancelled).
+
+- **Lost whispers** heal without extra traffic in the normal case: nothing is acknowledged on
+  its own, a message is only sent again when the reply it waits for doesn't come (challenge
+  after 30 and 75 s, accept once after 90 s, reveal after 8, 18 and 30 s), and a repeated
+  message gets the same answer again. A lost accept is healed by the repeated challenge.
+- **Cheating:** a squad that doesn't match its commit or breaks the rules (size, cap,
+  one leader), or an opponent who doesn't reveal after seeing ours, loses by forfeit.
+- **Limits:** B has 2 minutes to pick and accept, A 2.5 minutes after that; both players have
+  to be online. Same faction only (whispers). Squads go as "npcId,stars,type,rarity,family,
+  flags,name"; a message over 255 characters goes in parts.
+- **Tested headless** with simulated clients over a lossy network: every message lost once,
+  everything duplicated, cheating, rule-breaking squads, no answer, no pick, a sore loser,
+  offline players, other versions, both challenging at once, long names, hidden (secret)
+  message contents, a third player meddling, cross-realm names; 300 duels at 15% loss, 10%
+  duplicates and up to 3 s delay: no duel ever ended with different results on the two
+  sides, 5 whispers per duel on average. And two complete clients dueling through the UI.
+
+**Open:** duels while the other player is offline (like Quiz Duel), each step waiting until
+they're back. That needs the commits saved and both reveals to wait; the live version first.
 
 **What you know about your opponent:** nothing about their squads before the fight, only the
 twist (6.2). Reading them comes from knowing the player and what they sent before.
@@ -395,7 +427,7 @@ is its own addon): burst then 1 per second, deduplicated, offline players retrie
 **Fairness:** the hidden pick and the type triangle already mean the stronger collection
 doesn't simply win. On top, the **power cap** (decided, 5.3): the challenger picks the cap,
 and the squads both send must fit under it, like the points limit of a Warcry warband. Each of
-your three squads can be built for a different cap, or you rebuild before locking in. **For now the cap is fixed at 500** (decided) and can't be picked; the cap button on the
+your three squads can be built for a different cap, or you rebuild before locking in. **For now the cap is fixed at 110** (decided) and can't be picked; the cap button on the
 Squads tab is greyed out.
 
 Rating: simple Elo per opponent and overall, per character.
@@ -406,18 +438,18 @@ Warcry's roster building fits this game. What we take from it:
 
 | Warcry | In Bestiary | Proposal |
 |---|---|---|
-| Points limit per warband | Power cap per duel; cards cost their power; fixed at 500 for now (later maybe a choice of caps) | **Decided** |
-| Warband size varies | 3 to 7 cards per squad instead of a fixed 5: two strong cards or seven weak ones | **Decided** |
+| Points limit per warband | Power cap per duel; cards cost their power; fixed at 110 for now (later maybe a choice of caps) | **Decided** |
+| Warband size varies | At least 3 cards per squad, otherwise only the power cap limits it (up to 8 weak ones) | **Decided** |
 | A leader is required | The named card (Rare, Rare Elite, Boss) always leads; at most one per squad; a leader isn't required (named cards are hard to get) | **Decided** |
 | Runemarks (keywords abilities refer to) | Family and combat type are the keywords abilities refer to ("other Undead get +armor") | **Decided** |
 | Battleplan and twist cards | Each duel draws a twist, revealed at the challenge before both pick (6.2) | **Decided** |
-| Limits on allies and monsters | At most one named card (so at most one Legendary); no card above 40% of the cap | **Decided** |
+| Limits on allies and monsters | At most one named card (so at most one Legendary); no per-card limit beyond the cap | **Decided** |
 | Campaign: injuries | Cards get worn out and sit out duels: stamina (6.3) | **Decided** |
 | Campaign: experience | Cards gaining XP from duels | Not for now |
 | Battle groups (Dagger / Shield / Hammer) | Reserves joining later | **No**: too complicated |
 | Wild dice fuel abilities | A seeded roll per round that fuels abilities | **No** |
 
-Squad sizes change 5.1: a squad is 3 to 7 cards, front to back, led by its named card if it has one.
+Squad sizes change 5.1: a squad is at least 3 cards, front to back, led by its named card if it has one.
 
 ### 6.2 Twists
 
@@ -452,6 +484,37 @@ sending your best ones, so collection depth matters:
 - Stamina has no effect on how a card fights; it only decides whether it can be sent.
 - Card UI: a stamina bar under the health, "exhausted: back in 2 duels" when at 0.
 
+### 6.4 Bestiary friends and the board (decided)
+
+**Only Bestiary friends duel each other** and share the board. Adding a friend by name sends a
+request (`F|ask`); they get a popup and answer `F|ok` or `F|no`. If both asked each other,
+it's a yes on its own. A friendship costs 3 whispers (request, yes, the board's first hello).
+Removing a friend only takes them off your list. Challenges from players who aren't your
+friend are declined ("not friends"), and the challenge button refuses them. Friends are on
+the Board tab: click one to duel, right-click to remove; requests show with "!" (click to
+accept, right-click to decline), your open ones with "?".
+
+A **Board** tab with short posts (up to 200 characters) shared with your friends. Everyone edits and deletes
+only their own posts. Saved account wide (`BestiaryAccount.board`, `Core/Board.lua`,
+`UI/Board.lua`). Every post version carries the server time it was written; the newest wins,
+a deletion leaves a marker so it syncs too, and posts older than 60 days are dropped
+everywhere by the same rule.
+
+Sync with as few whispers as possible, only with your contacts:
+- **A new post, edit or delete** goes once to each contact. Nothing comes back.
+- **On login** (and with "Sync now") each contact gets a fingerprint of your board, taken at
+  a given time, plus when you were last in sync with them. Same fingerprint: no answer, so
+  1 whisper per contact. Different: they send everything they stored after that time, as one
+  message (in parts if long), and answer with their own fingerprint, so you send what they
+  lack the same way. Nothing they sent you is sent back to them.
+- Posts travel on: if you share with Bob and Bob with Cid, Cid's posts reach you through Bob.
+  Only messages from your contacts are accepted.
+- **Tested headless** with up to four simulated clients: online and offline posting, catching
+  up on login, edit and delete, only authors change posts, relaying, strangers ignored, long
+  posts, old versions never win, both posting while apart (4 whispers to sync); 50 fuzz
+  rounds of four players in a ring with 20% loss and random offline times: every board ended
+  up the same. And through the UI of two complete clients.
+
 ## 7. Hardcore
 
 - **Opt-in** when you start a bestiary on a character: Normal or Hardcore. Can't switch a
@@ -460,7 +523,14 @@ sending your best ones, so collection depth matters:
 - When the character dies (`PLAYER_DEAD`, or found dead/ghost on login): the bestiary is
   **gone**. It moves to a "Hall of the Fallen" (per account): character, level, days survived,
   card count, best card, duel record. You can start a new one.
-- Hardcore means complete loss, on purpose; that's its only death penalty.
+- Hardcore means complete loss **of the cards**, on purpose; that's its only death penalty.
+  **What you've studied stays** (decided): you still know those mobs. Your own card (3.6)
+  stays too, back to 1 star.
+- **Implemented (prototype):** a checkbox on the Test tab, per character, with a
+  confirmation (`Core/Hardcore.lua`). Feign Death doesn't count, the same death isn't counted
+  twice, and a death while the addon was off is caught at the next login. Each loss is saved in
+  `BestiaryAccount.fallen` for the Hall of the Fallen. The opt-in lock and the perks above
+  come later; for now it can be switched any time.
 - **Normal bestiaries:** no penalty when you die.
 
 ## 8. Saved data
@@ -526,9 +596,9 @@ both sides for the same seed).
 - Drops show as an alert like the loss of control alert, centered in the upper half (9).
 - Three prepared squads per player; both pick one in secret before a duel (6).
 - A perfect counter wins easily (3.5).
-- Power cap per duel, picked by the challenger (6). **For now one fixed cap of 500** (decided);
+- Power cap per duel, picked by the challenger (6). **For now one fixed cap of 110** (decided);
   picking a cap comes later.
-- From Warcry: 3-7 cards per squad, a leader, keywords, twists, roster limits, cards getting
+- From Warcry: at least 3 cards per squad (the cap limits the rest), a leader, keywords, twists, roster limits, cards getting
   worn out (6.1). No battle groups, no wild dice, no XP for now.
 - Stamina per card: drained by health lost in duels, refilled by resting, 2 duels out at 0
   (6.3).
@@ -539,11 +609,11 @@ both sides for the same seed).
 
 1. Fight rules: the proposal in 5.2, then balance with headless runs.
 2. Single fight or best of 3 (6).
-3. Cap sizes beyond the fixed 500 (6); stamina numbers (6.3).
+3. Cap sizes beyond the fixed 110 (6); stamina numbers (6.3).
 4. Stars: how many copies per star (3.3), after 1.
 5. Abilities, after the prototype.
 
-## 13. Prototype and mockup
+## 13. Prototype (no more mockup)
 
 `Bestiary.toc` loads:
 
@@ -553,11 +623,17 @@ both sides for the same seed).
   spell. The tab shows your cards and the mob types you're still studying with progress.
   Drops show the drop alert (`UI/Loot.lua`). Saved per character in `BestiaryChar`,
   mob info account-wide in `BestiaryAccount`.
-- **Squads and Duel tabs (mockup, made-up cards):** the squad builder with drag and drop,
-  leader, power bar with type and family counts and checks (with icons); the duel with twist, hidden pick (switch freely, Ready locks it in), replay and
-  stamina. The fight in `Mock/Fight.lua` follows 5.2, with Healers (heal the weakest ally, half
-  onto the one behind, 10% weaker each time, Healer leader +20%, last on speed ties) and the
-  family bonuses (3.4).
+- **Squads tab (real cards):** three squads of your own cards, saved per character
+  (`BestiaryChar.squads`, `Core/Squads.lua`), built by drag and drop from your collection;
+  power bar, type and family counts, checks. A card you lose drops out of its squads.
+- **Duel tab (real cards):** twist, hidden pick (switch freely, drag to reorder, Ready locks it
+  in), replay, stamina saved on your real cards. **Challenge target** (or `/bst duel [name]`)
+  starts a duel with another player who has Bestiary: they get a popup, pick first, then you
+  (protocol in 6). Without one, "New duel" fights the **Sparring
+  Partner**: three squads (Tank, Mage and Assassin heavy) of mobs you've seen (not named ones),
+  random stars, built up to about your own squads' average power; with fewer than 7 seen mobs
+  it uses training cards. The fight (`Core/Fight.lua`) follows 5.2 with Healers and family
+  bonuses (3.4). Rules shared by everything are in `Core/Rules.lua`.
 - **Studying tab** (arcane eye): the mob types you're studying, most studied first, with
   progress, the card it would give so far and casts seen; hover for details (`UI/Studying.lua`).
   The Collection tab only shows cards now.
@@ -575,6 +651,9 @@ both sides for the same seed).
   data, stars kept) or remove its card, or
   force a drop on the next kill (skips studying and the roll once, this session only), or
   set the drop chance to 90% until the next drop (studied mobs only, this session only).
+  Also: clear the collection (with a confirmation; your own card and study stay), fill it
+  with 5 basic cards (common, 1 star: 2 Tank, Mage, Assassin, Healer; not counted as drops),
+  and the hardcore checkbox (7).
 - `/bst` opens it, `/bst mob` prints everything known about your target's mob type, `/bst
   debug` prints kills and drop rolls, `/bst test` opens the Test tab.
 

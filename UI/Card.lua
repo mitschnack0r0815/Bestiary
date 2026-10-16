@@ -13,7 +13,7 @@ Card.WIDTH, Card.HEIGHT = 86, 128
 local ART = 44
 local BADGE = 18
 local STAR = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1"
-local DRAGON_SIZE = 1.5 -- the dragon ring around leaders, times the art size
+local DRAGON_SIZE = 1.7 -- the dragon ring around leaders, times the art size
 -- Models can't be cut round, so the round frame is drawn above the model: a cover in the card's
 -- color hides the model's corners outside the circle, the ring sits on top of that
 local RING = "Interface\\AddOns\\Bestiary\\Media\\RingBorder"
@@ -96,16 +96,22 @@ end
 ns.SetDragon = SetDragon
 
 function ns.SetPortrait(model, art, data)
-	if not (data.npcId and model.SetCreature) then
+	-- no model for training cards, nor for another player's own card (we can't show them)
+	if not (data.npcId and model.SetCreature) or (data.player and data.remote) then
 		model:Hide()
 		return
 	end
 	model.art, model.icon = art, data.art or ns.FAMILIES[data.family].icon
-	if model.npcId ~= data.npcId then
-		model.npcId = data.npcId
+	local key = data.player and "player" or data.npcId -- your own card shows you
+	if model.npcId ~= key then
+		model.npcId = key
 		model.loaded = false
 		model:ClearModel()
-		model:SetCreature(data.npcId)
+		if data.player then
+			model:SetUnit("player")
+		else
+			model:SetCreature(data.npcId)
+		end
 	end
 	if model.SetPortraitZoom then
 		model:SetPortraitZoom(1)
@@ -173,7 +179,7 @@ function Card.Create(parent)
 
 	card.name = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	card.name:SetPoint("TOPLEFT", 6, -6)
-	card.name:SetPoint("TOPRIGHT", -6, -6)
+	card.name:SetPoint("TOPRIGHT", -26, -6) -- room for the power gem
 	card.name:SetHeight(22)
 	card.name:SetJustifyV("MIDDLE")
 	card.name:SetWordWrap(true)
@@ -181,7 +187,7 @@ function Card.Create(parent)
 	-- Round art: the icon (or a dark backdrop) cut round; the ring goes on the layer above the model
 	card.art = card:CreateTexture(nil, "ARTWORK", nil, 2)
 	card.art:SetSize(ART, ART)
-	card.art:SetPoint("TOP", 0, -30)
+	card.art:SetPoint("TOP", 0, -34)
 	Round(card, card.art)
 
 	-- The creature's 3D portrait over the art (cards from real mobs); the icon stays as the
@@ -208,10 +214,25 @@ function Card.Create(parent)
 	card.ring:SetTexture(RING)
 
 	card.badge = Medallion(top, BADGE, nil, "OVERLAY")
-	card.badge.ring:SetPoint("CENTER", card.art, "BOTTOMLEFT", 7, 7)
+	card.badge.ring:SetPoint("CENTER", card.art, "BOTTOMLEFT", 2, 3)
 	-- The family on the other side
 	card.familyBadge = Medallion(top, BADGE, nil, "OVERLAY")
-	card.familyBadge.ring:SetPoint("CENTER", card.art, "BOTTOMRIGHT", -7, 7)
+	card.familyBadge.ring:SetPoint("CENTER", card.art, "BOTTOMRIGHT", -2, 3)
+
+	-- Power, in the top right corner: a gold number in a dark round gem with a gold rim
+	card.powerRim = top:CreateTexture(nil, "OVERLAY", nil, 3)
+	card.powerRim:SetSize(24, 24)
+	card.powerRim:SetPoint("CENTER", card, "TOPRIGHT", -13, -13) -- the card's top right corner
+	card.powerRim:SetColorTexture(1, 0.82, 0.2)
+	Round(top, card.powerRim)
+	card.powerBg = top:CreateTexture(nil, "OVERLAY", nil, 4)
+	card.powerBg:SetSize(21, 21)
+	card.powerBg:SetPoint("CENTER", card.powerRim)
+	card.powerBg:SetColorTexture(0.08, 0.06, 0.04)
+	Round(top, card.powerBg)
+	card.power = top:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+	card.power:SetPoint("CENTER", card.powerRim, "CENTER", 0, 0)
+	card.power:SetTextColor(1, 0.82, 0.2)
 
 	-- Leaders: the dragon ring around the art
 	card.dragon = top:CreateTexture(nil, "OVERLAY", nil, 1)
@@ -221,7 +242,7 @@ function Card.Create(parent)
 		-- Sized so the dragon's own gold ring sits on the edge of the art
 		card.dragon:SetSize(ART * DRAGON_SIZE, ART * DRAGON_SIZE)
 	else
-		card.dragon:SetSize(ART * 1.6, ART * 1.35)
+		card.dragon:SetSize(ART * 1.8, ART * 1.5)
 		card.dragon:SetPoint("CENTER", card.art, "CENTER", 6, 2)
 	end
 	card.dragon:Hide()
@@ -231,14 +252,14 @@ function Card.Create(parent)
 		local star = top:CreateTexture(nil, "OVERLAY")
 		star:SetSize(10, 10)
 		star:SetTexture(STAR)
-		star:SetPoint("TOP", card.art, "BOTTOM", (i - 3) * 11, -3)
+		star:SetPoint("TOP", card.art, "BOTTOM", (i - 3) * 11, -10)
 		card.stars[i] = star
 	end
 
 	card.stats = {}
 	for i, stat in ipairs({ "attack", "health", "speed" }) do
 		local text = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		text:SetPoint("BOTTOM", card, "BOTTOMLEFT", 6 + (Card.WIDTH - 12) * (i * 2 - 1) / 6, 14)
+		text:SetPoint("BOTTOM", card, "BOTTOMLEFT", 6 + (Card.WIDTH - 12) * (i * 2 - 1) / 6, 11)
 		text:SetTextColor(unpack(STAT_COLORS[stat]))
 		card.stats[stat] = text
 		local label = card:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -248,9 +269,9 @@ function Card.Create(parent)
 	end
 
 	card.bar = CreateFrame("StatusBar", nil, card)
-	card.bar:SetPoint("BOTTOMLEFT", 8, 7)
-	card.bar:SetPoint("BOTTOMRIGHT", -8, 7)
-	card.bar:SetHeight(5)
+	card.bar:SetPoint("BOTTOMLEFT", 8, 5)
+	card.bar:SetPoint("BOTTOMRIGHT", -8, 5)
+	card.bar:SetHeight(4)
 	card.bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
 	local barBg = card.bar:CreateTexture(nil, "BACKGROUND")
 	barBg:SetAllPoints()
@@ -344,6 +365,7 @@ function Mixin:SetCard(data, bar)
 	self.badge.icon:SetTexture(kind.icon)
 	self.familyBadge.ring:SetVertexColor(unpack(family.color))
 	self.familyBadge.icon:SetTexture(family.icon)
+	self.power:SetText(data.power)
 	for i, star in ipairs(self.stars) do
 		star:SetShown(i <= data.stars)
 	end
@@ -406,7 +428,9 @@ function Card.ShowTooltipFor(owner, data)
 	GameTooltip:AddDoubleLine("Stamina", data.stamina .. " / 100", 1, 1, 1, 1, 1, 1)
 	GameTooltip:AddLine(" ")
 	if ns.IsNamed(data) then
-		GameTooltip:AddLine("Named: always leads its squad, one per squad", 1, 0.82, 0, true)
+		GameTooltip:AddLine(data.player and (data.remote and (data.remote .. " themselves: always leads, one leader per squad")
+			or "That's you: always leads its squad, one leader per squad")
+			or "Named: always leads its squad, one per squad", 1, 0.82, 0, true)
 		GameTooltip:AddLine(kind.leader, 1, 0.82, 0, true)
 	end
 	if data.spell then

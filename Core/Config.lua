@@ -22,7 +22,15 @@ ns.STARTER_HALF = 5
 ns.STARTER_END = 40
 
 -- Card power (3.2): level doesn't count
-ns.BASE_POWER = 60
+ns.BASE_POWER = 60 -- stat budget of a common 1-star card
+
+-- The power shown on cards and counted against the cap reads like a level: 0 to 63, where a
+-- Legendary card with 5 stars (the biggest budget) is 63. Stats still come from the budget.
+ns.MAX_POWER = 63
+function ns.PowerFromBudget(budget)
+	local most = ns.BASE_POWER * ns.RARITIES.worldboss.factor * (1 + ns.STAR_BONUS * (ns.MAX_STARS - 1))
+	return math.max(1, math.floor(budget / most * ns.MAX_POWER + 0.5))
+end
 ns.STAR_BONUS = 0.15
 
 -- Classification as the game reports it -> our rarity key. Skull-level mobs (UnitLevel -1) count

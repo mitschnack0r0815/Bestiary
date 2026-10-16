@@ -1,14 +1,16 @@
 local _, ns = ...
 local Card = ns.Card
 
--- MOCKUP window: character-pane frame with side tabs like Grandma's Game Box. Two pages:
---   Squads: three squads of up to 7 cards (front left, back right), checks, and the
+-- The window: character-pane frame with side tabs like Grandma's Game Box. Pages from this file:
+--   Squads: your three squads of up to 7 real cards (front left, back right), checks, and your
 --           collection below
---   Duel:   a twist, a hidden pick of one of your squads against one of the opponent's, then
---           the replay and stamina afterwards
+--   Duel:   a twist, a hidden pick of one of your squads against one of the sparring partner's,
+--           then the replay and stamina afterwards
+-- Other pages add themselves with ns.AddPage.
 local WIDTH, HEIGHT = 720, 690
-local STEP = Card.WIDTH + 8
-local ROW_X = (WIDTH - (ns.MAX_SQUAD * STEP - 8)) / 2
+local STEP = Card.WIDTH + 8 -- the collection grid
+local ROW_STEP = Card.WIDTH + 1 -- squad and duel rows: 8 slots need to fit the window
+local ROW_X = (WIDTH - (ns.MAX_SQUAD * ROW_STEP - 1)) / 2
 
 local function TemplateExists(name)
 	return C_XMLUtil and C_XMLUtil.GetTemplateInfo and C_XMLUtil.GetTemplateInfo(name) ~= nil
@@ -89,7 +91,7 @@ local function SelectPage(page)
 		other.panel:SetShown(other == page)
 		other.tab:SetChecked(other == page)
 	end
-	SetTitle("Bestiary: " .. page.name .. (page.mockup and "  |cff999999(mockup)|r" or ""))
+	SetTitle("Bestiary: " .. page.name)
 end
 
 -- Tabs from top to bottom by their order
@@ -107,9 +109,9 @@ local function LayoutTabs()
 	end
 end
 
--- Adds a page with a side tab. order: lower comes first. mockup: shows "(mockup)" in the title.
-local function AddPage(name, icon, order, mockup)
-	local page = { name = name, order = order or #pages + 1, mockup = mockup }
+-- Adds a page with a side tab. order: lower comes first.
+local function AddPage(name, icon, order)
+	local page = { name = name, order = order or #pages + 1 }
 	page.panel = CreateFrame("Frame", nil, window)
 	page.panel:SetAllPoints()
 	page.panel:SetFrameLevel(window:GetFrameLevel() + 5)
@@ -145,7 +147,7 @@ ns.WINDOW_WIDTH, ns.WINDOW_HEIGHT = WIDTH, HEIGHT
 
 -- Squads page ---------------------------------------------------------------------------------
 
-local squadsPage = AddPage("Squads", "Interface\\Icons\\INV_Misc_Book_09", 3, true)
+local squadsPage = AddPage("Squads", "Interface\\Icons\\INV_Misc_Book_09", 3)
 local current = 1 -- selected squad
 local filter -- combat type shown in the collection, "Named" for named cards (leaders), nil for all
 local Refresh
@@ -189,7 +191,7 @@ howTo:SetText("Drag cards in and around  ·  Right-click: remove  ·  The named 
 local slots = {}
 for i = 1, ns.MAX_SQUAD do
 	local slot = SlotFrame(squadsPage)
-	slot:SetPoint("TOPLEFT", ROW_X + (i - 1) * STEP, -84)
+	slot:SetPoint("TOPLEFT", ROW_X + (i - 1) * ROW_STEP, -84)
 	slot.label:SetText(i <= ns.MIN_SQUAD and "empty" or "")
 	slot.card = Card.Create(slot)
 	slot.card:SetAllPoints()
@@ -249,6 +251,9 @@ local grid = CreateFrame("Frame", nil, scroll)
 grid:SetSize(WIDTH - 60, 10)
 scroll:SetScrollChild(grid)
 local COLUMNS = math.floor((WIDTH - 60) / STEP)
+local emptyGrid = gridInset:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+emptyGrid:SetPoint("CENTER")
+emptyGrid:SetText("No cards yet. Kill studied mobs to collect cards, then drag them into a squad.")
 
 -- Squad editing
 
@@ -278,7 +283,7 @@ local function Place(squad, id, position)
 		return
 	end
 	local leader = ns.SquadLeader(ns.SquadCards(squad))
-	if leader and ns.IsNamed(ns.byId[id]) then
+	if leader and ns.IsNamed(ns.CardById(id)) then
 		UIErrorsFrame:AddMessage(("Only one named card per squad: %s already leads it."):format(leader.name), 1, 0.2, 0.2)
 		return
 	end
@@ -421,7 +426,8 @@ function Refresh()
 
 	-- Collection
 	local list = {}
-	for _, data in ipairs(ns.collection) do
+	local collection = ns.Collection()
+	for _, data in ipairs(collection) do
 		if not filter or data.type == filter or (filter == "Named" and ns.IsNamed(data)) then
 			list[#list + 1] = data
 		end
@@ -450,7 +456,8 @@ function Refresh()
 	end
 	grid:SetHeight(math.ceil(#list / COLUMNS) * (Card.HEIGHT + 8))
 	ns.ClipCards(scroll, gridCards)
-	collectionLabel:SetText(("Collection  |cff999999%d cards|r"):format(#ns.collection))
+	collectionLabel:SetText(("Collection  |cff999999%d cards|r"):format(#collection))
+	emptyGrid:SetShown(#collection == 0)
 	for _, button in ipairs(filterButtons) do
 		if (button.kind == "All" and not filter) or button.kind == filter then
 			button:LockHighlight()
@@ -466,7 +473,7 @@ end)
 
 -- Duel page -----------------------------------------------------------------------------------
 
-local duelPage = AddPage("Duel", "Interface\\Icons\\Ability_DualWield", 4, true)
+local duelPage = AddPage("Duel", "Interface\\Icons\\Ability_DualWield", 4)
 
 local theirName = duelPage:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 theirName:SetPoint("TOPLEFT", 72, -34)
@@ -476,7 +483,7 @@ local function CardRow(y)
 	local row = {}
 	for i = 1, ns.MAX_SQUAD do
 		local slot = SlotFrame(duelPage)
-		slot:SetPoint("TOPLEFT", ROW_X + (i - 1) * STEP, y)
+		slot:SetPoint("TOPLEFT", ROW_X + (i - 1) * ROW_STEP, y)
 		if slot.SetBackdropBorderColor then
 			slot:SetBackdropBorderColor(0.25, 0.25, 0.25, 0.5)
 		end
@@ -519,7 +526,7 @@ local myRow = CardRow(-300)
 
 local pickLabel = duelPage:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 pickLabel:SetPoint("TOP", 0, -456)
-pickLabel:SetText("Pick your squad. Ricarda picks too, without seeing yours.")
+pickLabel:SetText("")
 
 local pickButtons = {}
 for i = 1, 3 do
@@ -546,7 +553,8 @@ skipButton:SetPoint("BOTTOM", -76, 18)
 local newButton = Button(duelPage, "New duel", 140, 26)
 newButton:SetPoint("BOTTOM", 76, 18)
 
-local duelSeed = 1
+local duelSeed = time and time() % 100000 or 1 -- a different sparring partner every session
+local sparring -- the sparring partner's squads for this duel
 local twist, ticker, steps, stepIndex, outcome
 local picked -- the squad picked before Ready, can still change
 
@@ -675,17 +683,20 @@ end
 local function UpdateStamina(mySquad, sides)
 	local fought = {}
 	for _, unit in ipairs(sides[1]) do
-		local card = unit.card
-		fought[card.id] = true
+		local card = ns.SavedCard(unit.card)
 		local loss = math.floor((1 - unit.hp / unit.maxHp) * 100 * 0.6 + 0.5)
-		card.stamina = math.max(0, card.stamina - loss)
-		if card.stamina == 0 then
-			card.exhausted = 2
+		if card then
+			fought[card] = true
+			card.stamina = math.max(0, (card.stamina or 100) - loss)
+			if card.stamina == 0 then
+				card.exhausted = 2
+			end
 		end
 		myRow[unit.slot].note:SetText(loss > 0 and ("|cff6aa0ffstamina -%d|r"):format(loss) or "|cff999999no stamina lost|r")
 	end
-	for _, card in ipairs(ns.collection) do
-		if not fought[card.id] then
+	-- Saved on the real cards: the ones that didn't fight rest
+	for _, card in pairs(BestiaryChar.cards) do
+		if not fought[card] then
 			if card.exhausted then
 				card.exhausted = card.exhausted - 1
 				if card.exhausted == 0 then
@@ -693,11 +704,26 @@ local function UpdateStamina(mySquad, sides)
 					card.stamina = 100
 				end
 			else
-				card.stamina = math.min(100, card.stamina + 25)
+				card.stamina = math.min(100, (card.stamina or 100) + 25)
 			end
 		end
 	end
 end
+
+local remote -- the duel with another player shown on this page (ns.Duel), nil for sparring
+local opponentName -- who we're fighting: the sparring partner or a player
+
+local challengeButton = Button(duelPage, "Challenge target", 150, 24)
+challengeButton:SetPoint("TOPRIGHT", -16, -32)
+-- A name to challenge; empty: the button challenges your target
+local challengeName = CreateFrame("EditBox", nil, duelPage, "InputBoxTemplate")
+challengeName:SetSize(130, 24)
+challengeName:SetPoint("RIGHT", challengeButton, "LEFT", -10, 0)
+challengeName:SetAutoFocus(false)
+challengeName:SetMaxLetters(48)
+local challengeHint = challengeName:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+challengeHint:SetPoint("LEFT", 2, 0)
+challengeHint:SetText("Name (or your target)")
 
 local function Finish()
 	StopReplay()
@@ -711,16 +737,21 @@ local function Finish()
 		vsText:SetTextColor(0.9, 0.2, 0.15)
 	end
 	UpdateStamina(outcome.mine, outcome.sides)
+	if remote then
+		remote.playing = nil
+	end
 	if not outcome.recorded then
 		outcome.recorded = true
 		ns.RecordDuel(outcome.events, outcome.winner, outcome.sides, outcome.mine.name, outcome.twist)
 	end
-	resultText:SetText(("Ricarda sent |cffffd200%s|r (%s).  New duel draws a new twist."):format(
-		outcome.theirs.name, ns.TypeMix(ns.SquadCards(outcome.theirs))))
+	resultText:SetText(("%s sent |cffffd200%s|r (%s).  New duel: the sparring partner, or challenge a player."):format(
+		opponentName, outcome.theirs.style or outcome.theirs.name, ns.TypeMix(ns.SquadCards(outcome.theirs))))
+	newButton:SetText("New duel")
 end
 
-local function Fight(mine)
-	local theirs = ns.opponent.squads[(duelSeed * 7) % 3 + 1]
+-- Plays a fight: mine and theirs are squads ({ name, cards = ids }), the rest from ns.Fight with
+-- us as side 1
+local function Play(mine, theirs, events, winner, sides, twistName)
 	ShowSquad(myRow, mine)
 	ShowSquad(theirRow, theirs)
 	for _, button in ipairs(pickButtons) do
@@ -728,12 +759,8 @@ local function Fight(mine)
 	end
 	readyButton:Disable()
 	pickLabel:SetText(("Fight!   |cff40ff40You:|r %s    |cffff6060%s:|r %s"):format(
-		ns.FamilyText(ns.SquadCards(mine)), ns.opponent.name, ns.FamilyText(ns.SquadCards(theirs))))
-	local events, winner, sides = ns.Fight(
-		{ cards = ns.SquadCards(mine) },
-		{ cards = ns.SquadCards(theirs) },
-		duelSeed, twist.key)
-	outcome = { winner = winner, sides = sides, mine = mine, theirs = theirs, events = events, twist = twist.name }
+		ns.FamilyText(ns.SquadCards(mine)), opponentName, ns.FamilyText(ns.SquadCards(theirs))))
+	outcome = { winner = winner, sides = sides, mine = mine, theirs = theirs, events = events, twist = twistName }
 	for side, units in ipairs(sides) do
 		for _, unit in ipairs(units) do
 			RowFor(side)[unit.slot].card:SetMaxHealth(unit.maxHp)
@@ -773,31 +800,23 @@ local function Fight(mine)
 	end)
 end
 
-local function NewDuel()
-	StopReplay()
-	duelSeed = duelSeed + 1
-	twist = ns.TWISTS[duelSeed % #ns.TWISTS + 1]
-	theirName:SetText("vs |cffff6060Ricarda|r   |cff999999cap " .. ns.POWER_CAP .. "|r")
-	twistText:SetText(("Twist: |cffffd200%s|r  %s"):format(twist.name, twist.text))
-	ShowSquad(myRow, nil)
-	ShowSquad(theirRow, nil)
-	for i = 1, 5 do
-		theirRow[i].back:Show() -- always five, so the size of their pick doesn't show
-	end
-	vsText:SetText("VS")
-	vsText:SetTextColor(1, 0.82, 0)
-	roundText:SetText("")
-	logText:SetText("")
-	resultText:SetText("")
-	pickLabel:SetText("Pick your squad. Ricarda picks too, without seeing yours.")
-	skipButton:Disable()
+-- Against the sparring partner: the fight runs here
+local function SparringFight(mine)
+	local theirs = sparring[(duelSeed * 7) % 3 + 1]
+	local events, winner, sides = ns.Fight({ cards = ns.SquadCards(mine) }, { cards = ns.SquadCards(theirs) },
+		duelSeed, twist.key)
+	Play(mine, theirs, events, winner, sides, twist.name)
+end
+
+-- The pick buttons: your three squads, the ones that can't be sent greyed out
+local function SetupPicks(enabled)
 	picked = nil
 	readyButton:Disable()
 	for i, button in ipairs(pickButtons) do
 		local squad = ns.squads[i]
 		local fits = ns.CanLockIn(squad) and squad.cap <= ns.POWER_CAP
 		button:SetText(squad.name)
-		button:SetEnabled(fits)
+		button:SetEnabled(enabled and fits)
 		button:UnlockHighlight()
 		button:SetScript("OnClick", function()
 			-- Pick (or switch): shows the squad, Ready locks it in
@@ -819,12 +838,223 @@ local function NewDuel()
 	end
 end
 
-readyButton:SetScript("OnClick", function()
-	if picked then
+-- An empty board: twist, face-down opponent, nobody picked
+local function Board(name, theTwist)
+	StopReplay()
+	opponentName = name
+	theirName:SetText(("vs |cffff6060%s|r   |cff999999cap %d|r"):format(name, ns.POWER_CAP))
+	twistText:SetText(("Twist: |cffffd200%s|r  %s"):format(theTwist.name, theTwist.text))
+	ShowSquad(myRow, nil)
+	ShowSquad(theirRow, nil)
+	for i = 1, 5 do
+		theirRow[i].back:Show() -- always five, so the size of their pick doesn't show
+	end
+	vsText:SetText("VS")
+	vsText:SetTextColor(1, 0.82, 0)
+	roundText:SetText("")
+	logText:SetText("")
+	resultText:SetText("")
+	skipButton:Disable()
+end
+
+local function NewDuel()
+	if remote and not remote.finished then
+		return -- a duel with a player is going on
+	end
+	remote = nil
+	duelSeed = duelSeed + 1
+	twist = ns.TWISTS[duelSeed % #ns.TWISTS + 1]
+	sparring = ns.SparringSquads(duelSeed)
+	Board(ns.SPARRING_NAME, twist)
+	pickLabel:SetText(("Pick your squad. %s picks too, without seeing yours."):format(ns.SPARRING_NAME))
+	newButton:SetText("New duel")
+	SetupPicks(true)
+end
+
+-- Duels with players ---------------------------------------------------------------------------
+
+local WAITING = {
+	challenged = "Challenge sent to %s. They pick first, without seeing yours.",
+	incoming = "%s challenged you. Pick your squad, then press Ready.",
+	picking = "%s locked in their squad. Pick yours, then press Ready.",
+	accepted = "Locked in. Waiting for %s to pick...",
+	revealed = "Your squad is shown. Waiting for %s's squad...",
+}
+
+-- Shows a duel with a player in its current step
+local function ShowRemote(duel)
+	remote = duel
+	if duel.state ~= "fight" then
+		Board(duel.other, duel.twist)
+		if duel.mySquad then
+			ShowSquad(myRow, duel.mySquad)
+		end
+		pickLabel:SetText((WAITING[duel.state] or "%s"):format(duel.other))
+		SetupPicks(duel.state == "incoming" or duel.state == "picking")
+		newButton:SetText("Cancel duel")
+	end
+end
+
+-- A duel with a player ended without a fight
+local ENDINGS = {
+	declined = "%s declined (%s).",
+	expired = "The duel with %s ended: %s.",
+	cancelled = "The duel with %s was cancelled (by %s).",
+	offline = "%s is offline.",
+	forfeit = "%s loses by forfeit: %s.",
+}
+
+local function Ended(duel, event, detail)
+	if remote ~= duel then
+		ns.Print((ENDINGS[event] or "%s: %s"):format(duel.other, tostring(detail)))
+		return
+	end
+	for _, button in ipairs(pickButtons) do
+		button:Disable()
+	end
+	readyButton:Disable()
+	newButton:SetText("New duel")
+	pickLabel:SetText("")
+	resultText:SetText((ENDINGS[event] or "%s: %s"):format(duel.other, tostring(detail)))
+	if event == "forfeit" then
+		vsText:SetText("VICTORY!")
+		ns.RecordForfeit(duel.other)
+	end
+end
+
+StaticPopupDialogs["BESTIARY_CHALLENGE"] = {
+	text = "%s challenges you to a Bestiary duel.\nTwist: %s",
+	button1 = ACCEPT or "Accept",
+	button2 = DECLINE or "Decline",
+	timeout = 110,
+	whileDead = true,
+	hideOnEscape = true,
+	OnAccept = function(_, duel)
+		ns.Show("Duel")
+		ShowRemote(duel)
+	end,
+	OnCancel = function(_, duel, reason)
+		if reason == "clicked" or reason == "override" then
+			ns.Duel.Decline(duel, "declined")
+		end
+	end,
+}
+
+function ns.Duel.OnEvent(event, duel, detail)
+	if event == "incoming" then
 		PlaySound(SOUNDKIT.READY_CHECK)
-		local squad = picked
-		picked = nil -- locked in: no more reordering
-		Fight(squad)
+		StaticPopup_Show("BESTIARY_CHALLENGE", duel.other, duel.twist.name, duel)
+	elseif event == "challenged" or event == "picking" or event == "accepted" or event == "revealed" then
+		if event == "picking" then
+			PlaySound(SOUNDKIT.READY_CHECK)
+			ns.Show("Duel")
+		end
+		if remote == duel or event == "challenged" or event == "picking" then
+			ShowRemote(duel)
+		end
+	elseif event == "fight" then
+		remote = duel
+		duel.playing = true -- the page keeps it when it opens
+		ns.Show("Duel")
+		Board(duel.other, duel.twist)
+		local theirs = ns.ForeignSquad(duel.other, duel.theirs)
+		Play(duel.mySquad, theirs, detail.events, detail.winner, detail.sides, duel.twist.name)
+		newButton:SetText("New duel")
+	else
+		Ended(duel, event, detail)
+	end
+end
+
+-- The player you can challenge: your target, if it's a player of your faction
+local function ChallengeTarget()
+	if not UnitExists("target") or not UnitIsPlayer("target") or UnitIsUnit("target", "player")
+		or not UnitIsFriend("player", "target") then
+		return
+	end
+	local name, realm = UnitName("target")
+	if not name or (issecretvalue and (issecretvalue(name) or issecretvalue(realm))) then
+		return
+	end
+	return realm and realm ~= "" and (name .. "-" .. realm) or name
+end
+
+local function Challenge(name)
+	local duel, why = ns.Duel.Challenge(name)
+	if not duel then
+		UIErrorsFrame:AddMessage("Can't challenge: " .. why, 1, 0.2, 0.2)
+	end
+	return duel
+end
+ns.ChallengePlayer = function(name)
+	ns.Show("Duel")
+	return Challenge(name or ChallengeTarget())
+end
+
+-- The typed name, else the target
+local function ChallengeWho()
+	local typed = strtrim(challengeName:GetText() or ""):gsub("%s", "")
+	if typed ~= "" then
+		return typed
+	end
+	return ChallengeTarget()
+end
+
+local function UpdateChallenge()
+	local typed = strtrim(challengeName:GetText() or "")
+	challengeHint:SetShown(typed == "" and not challengeName:HasFocus())
+	challengeButton:SetText(typed ~= "" and ("Challenge " .. typed) or "Challenge target")
+end
+
+local function ChallengeClicked()
+	local name = ChallengeWho()
+	if not name then
+		UIErrorsFrame:AddMessage("Type a name or target a player of your faction to challenge them.", 1, 0.2, 0.2)
+		return
+	end
+	if Challenge(name) then
+		challengeName:SetText("")
+		challengeName:ClearFocus()
+	end
+	UpdateChallenge()
+end
+
+challengeButton:SetScript("OnClick", ChallengeClicked)
+challengeName:SetScript("OnEnterPressed", ChallengeClicked)
+challengeName:SetScript("OnEscapePressed", function(self)
+	self:SetText("")
+	self:ClearFocus()
+end)
+challengeName:SetScript("OnTextChanged", UpdateChallenge)
+challengeName:SetScript("OnEditFocusGained", UpdateChallenge)
+challengeName:SetScript("OnEditFocusLost", UpdateChallenge)
+challengeButton:SetScript("OnEnter", function(self)
+	GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+	GameTooltip:AddLine("Challenge the typed name, or your target if the box is empty")
+	GameTooltip:AddLine("They need Bestiary too. They pick a squad first, in secret; then you pick yours.", 1, 1, 1, true)
+	GameTooltip:Show()
+end)
+challengeButton:SetScript("OnLeave", GameTooltip_Hide)
+
+readyButton:SetScript("OnClick", function()
+	if not picked then
+		return
+	end
+	PlaySound(SOUNDKIT.READY_CHECK)
+	local squad = picked
+	picked = nil -- locked in: no more reordering
+	readyButton:Disable()
+	for _, button in ipairs(pickButtons) do
+		button:Disable()
+	end
+	if remote and not remote.finished then
+		remote.mySquad = squad
+		if remote.role == "opponent" then
+			ns.Duel.Accept(remote, ns.SquadCards(squad))
+		else
+			ns.Duel.Reveal(remote, ns.SquadCards(squad))
+		end
+	else
+		SparringFight(squad)
 	end
 end)
 
@@ -836,10 +1066,26 @@ skipButton:SetScript("OnClick", function()
 	stepIndex = #steps
 	Finish()
 end)
-newButton:SetScript("OnClick", NewDuel)
+newButton:SetScript("OnClick", function()
+	if remote and not remote.finished then
+		ns.Duel.Cancel(remote)
+		return
+	end
+	NewDuel()
+end)
 
-duelPage:SetScript("OnShow", NewDuel)
-duelPage:SetScript("OnHide", StopReplay)
+duelPage:SetScript("OnShow", function()
+	if remote and (not remote.finished or remote.playing) then
+		return -- keep showing the duel with the player
+	end
+	NewDuel()
+end)
+-- Closing during a replay: it plays to the end at once, so stamina and stats still count
+duelPage:SetScript("OnHide", function()
+	if ticker then
+		skipButton:GetScript("OnClick")()
+	end
+end)
 
 -- Opening -------------------------------------------------------------------------------------
 
@@ -870,7 +1116,8 @@ end
 SLASH_BESTIARY1 = "/bestiary"
 SLASH_BESTIARY2 = "/bst"
 SlashCmdList["BESTIARY"] = function(msg)
-	msg = strtrim(msg or ""):lower()
+	local raw = strtrim(msg or "")
+	msg = raw:lower()
 	if msg == "minimap" then
 		ns.ToggleMinimapButton()
 	elseif msg == "debug" then
@@ -888,6 +1135,11 @@ SlashCmdList["BESTIARY"] = function(msg)
 		ns.Show("Test")
 	elseif msg == "info" then
 		ns.Show("Info")
+	elseif msg == "duel" or msg:find("^duel ") then
+		local name = strtrim(raw:sub(6))
+		ns.ChallengePlayer(name ~= "" and name or nil)
+	elseif msg == "board" then
+		ns.Show("Board")
 	elseif msg == "stats" then
 		ns.Show("Stats")
 	elseif msg == "study" or msg == "studying" then
@@ -895,6 +1147,6 @@ SlashCmdList["BESTIARY"] = function(msg)
 	elseif msg == "" then
 		ns.Toggle()
 	else
-		ns.Print("/bst: open  ·  /bst mob: what's known about your target  ·  /bst debug: print kills and drop rolls  ·  /bst study  ·  /bst stats  ·  /bst info: how it works  ·  /bst test: test drops  ·  /bst minimap")
+		ns.Print("/bst: open  ·  /bst mob: what's known about your target  ·  /bst debug: print kills and drop rolls  ·  /bst duel [name]: challenge a player (or your target)  ·  /bst board  ·  /bst study  ·  /bst stats  ·  /bst info: how it works  ·  /bst test: test drops  ·  /bst minimap")
 	end
 end

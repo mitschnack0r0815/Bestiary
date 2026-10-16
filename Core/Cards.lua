@@ -82,7 +82,7 @@ function ns.CardView(card)
 		view[key] = value
 	end
 	view.id = "npc" .. card.npcId
-	view.power = math.floor(budget + 0.5)
+	view.power = ns.PowerFromBudget(budget) -- 0-63, like a level
 	view.health = math.max(5, math.floor(budget * kind.health * nudge(1) + 0.5))
 	view.attack = math.max(1, math.floor(budget * kind.attack * nudge(2) + 0.5))
 	-- Speed 1-10: the type's speed, one up or down by the NPC id

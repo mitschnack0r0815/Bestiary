@@ -11,7 +11,7 @@ local ROW = 20
 local INSET = C_XMLUtil and C_XMLUtil.GetTemplateInfo and C_XMLUtil.GetTemplateInfo("InsetFrameTemplate")
 	and "InsetFrameTemplate" or nil
 
-local page = ns.AddPage("Test", "Interface\\Icons\\INV_Misc_Gear_01", 7)
+local page = ns.AddPage("Test", "Interface\\Icons\\INV_Misc_Gear_01", 8)
 local selected -- npc id
 
 local title = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -106,6 +106,26 @@ boostNote:SetPoint("TOPLEFT", boost, "BOTTOMLEFT", 4, -2)
 boostNote:SetPoint("RIGHT", page, "RIGHT", -16, 0)
 boostNote:SetJustifyH("LEFT")
 boostNote:SetText("Every kill of a studied mob rolls against this instead of the normal chance. Turns itself off after a card drops. Only for this session.")
+
+-- Hardcore: dying loses the bestiary
+local hardcore = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
+hardcore:SetPoint("TOPLEFT", boost, "BOTTOMLEFT", 0, -34)
+local hardcoreText = hardcore.text or hardcore.Text or hardcore:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+hardcoreText:ClearAllPoints()
+hardcoreText:SetPoint("LEFT", hardcore, "RIGHT", 2, 1)
+hardcoreText:SetFontObject("GameFontHighlight")
+hardcoreText:SetText("|cffff4040Hardcore:|r lose all cards when this character dies")
+local hardcoreNote = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+hardcoreNote:SetPoint("TOPLEFT", hardcore, "BOTTOMLEFT", 4, -2)
+hardcoreNote:SetPoint("RIGHT", page, "RIGHT", -16, 0)
+hardcoreNote:SetJustifyH("LEFT")
+hardcoreNote:SetText("Every card you own is gone; your own card and what you've studied stay. Saved for this character. Feign Death doesn't count.")
+
+-- The collection
+local clearButton = Button("Clear collection", 140)
+clearButton:SetPoint("TOPLEFT", hardcoreNote, "BOTTOMLEFT", -4, -14)
+local fillButton = Button("Fill with 5 basic cards", 170)
+fillButton:SetPoint("LEFT", clearButton, "RIGHT", 8, 0)
 
 local rules = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 rules:SetPoint("BOTTOMLEFT", page, "BOTTOMLEFT", RIGHT_X, 16)
@@ -292,6 +312,7 @@ local function Refresh()
 
 	boost:SetChecked(ns.testChance)
 	boostText:SetTextColor(ns.testChance and 0.25 or 1, 1, ns.testChance and 0.25 or 1)
+	hardcore:SetChecked(ns.IsHardcore())
 	force:SetChecked(ns.forceDrop)
 	forceText:SetTextColor(ns.forceDrop and 0.25 or 1, 1, ns.forceDrop and 0.25 or 1)
 
@@ -350,6 +371,55 @@ removeButton:SetScript("OnClick", function()
 		ns.RemoveCard(selected)
 		ns.Print(("Removed %s from your collection."):format(owned.name or "?"))
 		PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+	end
+	Refresh()
+end)
+
+StaticPopupDialogs["BESTIARY_CLEAR"] = {
+	text = "Clear your whole collection?\nAll cards are removed and the squads emptied. Your own card stays.",
+	button1 = YES or "Yes",
+	button2 = NO or "No",
+	timeout = 0,
+	whileDead = true,
+	hideOnEscape = true,
+	OnAccept = function()
+		ns.ResetCollection()
+		ns.Print("Collection cleared.")
+	end,
+}
+
+StaticPopupDialogs["BESTIARY_HARDCORE"] = {
+	text = "Play this character hardcore?\nIf it dies, every card it owns is lost. Your own card and what you've studied stay.",
+	button1 = YES or "Yes",
+	button2 = NO or "No",
+	timeout = 0,
+	whileDead = true,
+	hideOnEscape = true,
+	OnAccept = function()
+		ns.SetHardcore(true)
+		Refresh()
+	end,
+	OnCancel = function()
+		Refresh()
+	end,
+}
+
+clearButton:SetScript("OnClick", function()
+	StaticPopup_Show("BESTIARY_CLEAR")
+end)
+
+fillButton:SetScript("OnClick", function()
+	local given = ns.FillBasicCards(5)
+	ns.Print(("Added %d basic cards (common, 1 star)."):format(given))
+	PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+end)
+
+hardcore:SetScript("OnClick", function(self)
+	if self:GetChecked() then
+		self:SetChecked(false) -- only after saying yes
+		StaticPopup_Show("BESTIARY_HARDCORE")
+	else
+		ns.SetHardcore(false)
 	end
 	Refresh()
 end)
