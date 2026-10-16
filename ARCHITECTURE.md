@@ -140,7 +140,8 @@ Dropped for now: unclear what it would add. Can come back if cards need another 
 
 ### 5.1 Squads
 
-You prepare **three squads**, each five cards in order: front (1) to back (5). Front cards get
+You prepare **three squads**, each 3 to 7 cards in order, front to back, with one leader
+(6.1). Front cards get
 attacked first, except by Assassins (back row) and splash. A card can be in more than one
 squad. You can change your squads any time, but a duel uses the squad you locked in for it.
 
@@ -225,21 +226,54 @@ your three squads can be built for a different cap, or you rebuild before lockin
 
 Rating: simple Elo per opponent and overall, per character.
 
-## 6.1 Ideas from Warhammer Warcry (to decide)
+## 6.1 Ideas from Warhammer Warcry
 
-Warcry's roster building fits this game; candidates to borrow:
+Warcry's roster building fits this game. What we take from it:
 
 | Warcry | In Bestiary | Proposal |
 |---|---|---|
 | Points limit per warband | Power cap per duel; cards cost their power; caps like 300 / 600 / 1000 | **Decided** |
-| Warband size varies | 3 to 7 cards per squad instead of a fixed 5: two strong cards or seven weak ones | First version |
-| A leader is required | One leader per squad (Elite, Rare or Boss card) with a squad-wide leader ability | First version |
-| Runemarks (keywords abilities refer to) | Family and combat type are the keywords abilities refer to ("other Undead get +armor") | First version |
-| Battleplan and twist cards | Each duel draws a twist, revealed at the challenge before both pick ("Fog: Assassins act twice in round 1", "Consecrated ground: Undead lose armor", "Ambush: back row is hit first"); shifts the triangle every duel | First version |
-| Limits on allies and monsters | At most one Legendary; no card above 40% of the cap | First version |
-| Battle groups (Dagger / Shield / Hammer) | Vanguard fights from round 1, Reserve joins in round 3: a hidden reserve is another surprise | Later |
-| Campaign: injuries and experience | Surviving cards gain XP; cards that die are injured and miss your next duel (could be the normal-mode death penalty, 7) | Later |
-| Wild dice fuel abilities | A seeded momentum roll per round that triggers stronger abilities | Maybe; adds luck |
+| Warband size varies | 3 to 7 cards per squad instead of a fixed 5: two strong cards or seven weak ones | **Decided** |
+| A leader is required | One leader per squad (Elite, Rare or Boss card) with a squad-wide leader ability | **Decided** |
+| Runemarks (keywords abilities refer to) | Family and combat type are the keywords abilities refer to ("other Undead get +armor") | **Decided** |
+| Battleplan and twist cards | Each duel draws a twist, revealed at the challenge before both pick (6.2) | **Decided** |
+| Limits on allies and monsters | At most one Legendary; no card above 40% of the cap | **Decided** |
+| Campaign: injuries | Cards get used up and sit out the next duels (6.3) | **Decided** |
+| Campaign: experience | Cards gaining XP from duels | Not for now |
+| Battle groups (Dagger / Shield / Hammer) | Reserves joining later | **No**: too complicated |
+| Wild dice fuel abilities | A seeded roll per round that fuels abilities | **No** |
+
+Squad sizes change 5.1: a squad is 3 to 7 cards, front to back, with one leader.
+
+### 6.2 Twists
+
+The duel id seeds a twist drawn from a list; it's shown with the challenge, so both players
+know it **before** picking and building. It changes which squad is the right one each time,
+so the same three squads don't always win. Examples:
+
+- **Fog:** Assassins act twice in round 1.
+- **Consecrated Ground:** Undead have no armor.
+- **Ambush:** everyone hits the back row first.
+- **Ley Lines:** Magic splash hits two enemies behind the target.
+- **Shield Wall:** Armor takes double the usual off each hit, but everyone is slower.
+- **Blood Moon:** Beasts and Demons +25% attack.
+- **Calm Waters:** no twist.
+
+Twists are pure rules in the simulation, so both sides apply them the same way.
+
+### 6.3 Fatigue: cards sit out
+
+Cards get used up, so you can't send your best cards every time and need depth in your
+collection:
+
+- A card that **dies** in a duel is **wounded** and can't be sent for the next X duels
+  (X to tune, around 2).
+- **Open:** do cards that fought and survived also need rest (1 duel), or only the fallen?
+- Wounded cards show a timer ("back in 2 duels"); squads with a wounded card can't be locked
+  in, so your three squads need spares.
+- Counted per duel you play, not per day, so players who duel a lot aren't punished more.
+- Could also be the normal-mode death penalty (7): when your character dies, your squads'
+  cards are wounded for a few duels instead of losing a card.
 
 ## 7. Hardcore
 
@@ -250,7 +284,8 @@ Warcry's roster building fits this game; candidates to borrow:
   **gone**. It moves to a "Hall of the Fallen" (per account): character, level, days survived,
   card count, best card, duel record. You can start a new one.
 - Hardcore means complete loss, on purpose.
-- **Open:** normal bestiaries. Idea: dying loses a random card from one of your squads.
+- **Open:** normal bestiaries. Ideas: dying loses a random card from one of your squads, or
+  wounds your squads' cards for a few duels (6.3).
 
 ## 8. Saved data
 
@@ -301,6 +336,8 @@ both sides for the same seed).
 - Three prepared squads per player; both pick one in secret before a duel (6).
 - A perfect counter wins easily (3.5).
 - Power cap per duel, picked by the challenger (6).
+- From Warcry: 3-7 cards per squad, a leader, keywords, twists, roster limits, fatigue (6.1).
+  No battle groups, no wild dice, no XP for now.
 
 ## 12. Open questions
 
@@ -308,7 +345,7 @@ both sides for the same seed).
 2. Combat type from watching the mob, or only from family and NPC id? (3.5)
 3. What you see of the opponent's squads before picking (6).
 4. Single fight or best of 3 (6).
-5. Which Warcry ideas go in (6.1), and the cap sizes.
+5. Cap sizes (6), how long fallen cards sit out and whether survivors rest too (6.3).
 6. Stars: how many copies per star (3.3), after 1.
 7. Penalty on death for normal bestiaries (7).
 
