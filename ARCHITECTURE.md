@@ -1,8 +1,11 @@
 # Bestiary: design
 
- A collectible auto battler fed by your real WoW play: the mobs you kill can drop
-trophy cards of themselves; you build a team of five from your collection and it fights other
-players' teams on its own. Optional hardcore: when your character dies, your bestiary dies.
+A collectible auto battler fed by your real WoW play: the mobs you kill can drop trophy cards
+of themselves. You prepare three squads of five from your collection; in a duel both players
+secretly pick one, and the squads fight on their own. Every card is Armor, Magic or Assassin,
+and those counter each other like rock, paper, scissors, so guessing what the other side sends
+matters as much as having strong cards. Optional hardcore: when your character dies, your
+bestiary dies.
 
 Status: design only, nothing built. Sections marked **Open** still need a decision; everything
 else is the current proposal and can be changed.
@@ -13,9 +16,12 @@ else is the current proposal and can be changed.
 
 1. Play WoW normally. Mobs you kill can drop a **card** of that mob.
 2. Getting the same card again **levels it up** instead of giving a copy.
-3. Pick **five cards** as your team. Families (beast, undead, ...) give bonuses when you field
-   several of one kind.
-4. **Duel** another player: both teams fight automatically; you watch the replay.
+3. Build **three squads** of five cards. Every card is **Armor, Magic or Assassin** (3.5);
+   squads mix them however you like. Families (beast, undead, ...) give bonuses when you
+   field several of one kind.
+4. **Duel** another player: both secretly pick one of their squads, then the two fight
+   automatically and you watch the replay. Bring the squad that counters theirs and you win
+   easily; get read and you lose.
 5. Wins earn rating and small rewards; your collection is what you build up over time.
 
 The building part is choosing what to hunt: want a dragonkin team, go farm whelps in the
@@ -30,7 +36,7 @@ Wetlands and wyrmkin in the Swamp of Sorrows.
 | Level, elite/rare, creature type | `UnitLevel`, `UnitClassification`, `UnitCreatureType` while it's target, mouseover or nameplate; cached by GUID and by NPC id | Not in the combat log, so a mob killed without ever being targeted or on a nameplate may lack them: then use the NPC id cache, else no drop |
 | Tapped by someone else | `UnitIsTapDenied` while cached | Tapped-away mobs give nothing |
 | XP worth (grey or not) | Level difference vs. player (the game's grey level formula) | Grey mobs give nothing |
-| Loot | `CHAT_MSG_LOOT` item links: quality, item level | Optional: rare/epic loot boosts the next card drop (see 4.3) |
+| What the mob did | Combat log: spells the mob cast (`SPELL_CAST_SUCCESS`, school), melee swings | Used for its combat type (3.5) |
 | Death | `PLAYER_DEAD` | Not on Feign Death. Also check `UnitIsDeadOrGhost("player")` on login for deaths while the addon was off |
 
 ## 3. Cards
@@ -38,7 +44,8 @@ Wetlands and wyrmkin in the Swamp of Sorrows.
 ### 3.1 Identity
 
 A card is one **NPC id** (all "Defias Pillager" share one id). Stored per card:
-`npcId, name, level (mob's), classification, family, stars (card level), obtained (time, zone)`.
+`npcId, name, level (mob's), classification, family, combat type, stars (card level),
+obtained (time, zone)`.
 
 ### 3.2 Stats without a database
 
@@ -55,8 +62,8 @@ client computes the same numbers:
 - One **ability** per card: picked by a seeded roll on the NPC id from its family's pool (3.4).
   Elites and better get a second ability.
 
-Duels send the card data along (npcId, level, classification, family, stars), so the other side
-can compute the same stats even if it has never seen that mob.
+Duels send the card data along (npcId, level, classification, family, combat type, stars), so
+the other side can compute the same stats even if it has never seen that mob.
 
 ### 3.3 Rarity and drop chance
 
@@ -88,6 +95,28 @@ From `UnitCreatureType`. Critters and "Not specified" don't drop cards.
 
 Numbers are placeholders for balancing.
 
+### 3.5 Combat types: Armor, Magic, Assassin
+
+Every card has one of three combat types. They're the rock, paper, scissors of the game, and
+the counters come from how each type fights (5.2), not from a "beats" table:
+
+| Type | How it fights | Strong against | Weak against |
+|---|---|---|---|
+| **Armor** | High health, slow. **Armor** takes a flat amount off every physical hit. Hits the front | Assassin: their many small hits barely get through | Magic |
+| **Magic** | Fragile. Hits **ignore armor** and splash onto the next enemy | Armor: big slow targets standing together | Assassin |
+| **Assassin** | Fastest, acts first. Strikes **twice** with smaller hits and goes for the **back row** (or the lowest health enemy) | Magic: kills fragile casters before they cast | Armor |
+
+- A squad is any mix: 3 Armor in front and 2 Magic behind is solid against Assassins and
+  weak against Magic; a mixed squad is safe but never crushes.
+- A perfect counter should win clearly, but stronger cards still matter a little (target:
+  a full counter squad wins about 80% at equal power; to be tuned in the headless tests).
+
+**Which type a card gets:** from what the mob actually did while you fought it. It cast
+non-physical spells: **Magic**. Otherwise by family lean and a seeded roll on the NPC id
+(Giant, Mechanical, Undead lean Armor; Beast, Humanoid lean Assassin; Demon, Dragonkin,
+Elemental lean Magic). **Open:** whether watching the mob is reliable enough, or the type
+should come only from family and NPC id (simpler, the same for everyone right away).
+
 ## 4. Getting cards
 
 ### 4.1 Counting a kill
@@ -107,20 +136,23 @@ chance x0.75 in a 5-man group, x0.25 in a raid (to be balanced).
 
 Dropped for now: unclear what it would add. Can come back if cards need another source.
 
-## 5. Team and battle
+## 5. Squads and battle
 
-### 5.1 Team
+### 5.1 Squads
 
-Five cards in order: front (1) to back (5). Front cards get attacked first; some abilities hit
-the back row or everyone.
+You prepare **three squads**, each five cards in order: front (1) to back (5). Front cards get
+attacked first, except by Assassins (back row) and splash. A card can be in more than one
+squad. You can change your squads any time, but a duel uses the squad you locked in for it.
 
 ### 5.2 Battle simulation
 
 Deterministic, so both clients produce the same fight without talking during it:
 
 - **Own random generator** (seeded, not `math.random`), seeded from the duel id.
-- Turns: everyone acts in speed order; each attack picks a target by simple rules (frontmost
-  alive enemy unless an ability says otherwise).
+- Turns: everyone acts in speed order (Assassins first). Targets by type: Armor and Magic
+  hit the frontmost alive enemy (Magic splashes onto the one behind it), Assassins hit the
+  backmost (or the lowest health enemy, to be tested). Armor takes a flat amount off every
+  physical hit; Magic ignores it.
 - Abilities trigger by rules: on first attack, below X% HP, every N turns, on death.
 - At most 50 rounds; then whoever has more health left wins.
 - Output: a list of events (who hit whom, for how much, who died) the UI plays back as a
@@ -140,9 +172,9 @@ duels (6). Levers a player can pull, all before the fight (it's an auto battler)
 - **Speed:** turn order. Fast cards act first, so a fast high-damage card can remove an enemy
   before it ever acts; slow tanks act last but survive.
 - **Family bonuses:** 2 or 4 of a family trade flexibility for a strong bonus.
-- **Counters:** families beat others (proposal: a loose circle like beast > humanoid >
-  undead > beast, demons strong against most but fragile, mechanical resist beasts...), so
-  there's no single best team and a team built against one opponent loses to another.
+- **Combat types:** the Armor / Magic / Assassin mix of a squad (3.5), and which of your
+  three squads you send against which opponent (6). This is the main strategy: there's no
+  single best squad, and a squad built against one opponent loses to another.
 - **Abilities:** triggers (first attack, low health, on death, every N turns) and targets
   (front, back, lowest health, all) that combine: an undead "rise again" in front, a
   dragonkin breath behind, a humanoid healer in the middle.
@@ -152,24 +184,44 @@ duels (6). Levers a player can pull, all before the fight (it's an auto battler)
   cards or five weaker ones becomes a real choice. Stars and rarity raise power, so they
   matter by making a card better per cost, not just bigger.
 
-Next step: write the fight rules out exactly (turn order, targeting, ability triggers,
-counters) and test them headless with many random teams to see which builds win.
+Next step: write the fight rules out exactly (turn order, targeting, armor, splash, ability
+triggers) and test them headless with many random squads: the triangle has to hold (each type
+beats the one it should), mixed squads should land in between, and no single squad should beat
+everything.
 
 ## 6. Duels
 
-Like Quiz Duel, nobody needs to be online at the same time for the fight itself:
+Both players pick one of their three squads **without seeing the other's pick**. To keep it
+hidden even though the addon sends everything over whispers, picks are sealed first and only
+opened once both are in (commit and reveal):
 
-1. A challenges B and sends their team snapshot (five cards, about 150 bytes).
-2. B accepts with their own team snapshot.
-3. Both simulate with the duel id as the seed and get the same result.
-4. Both sides store the result and replay.
+1. A challenges B. A picks a squad and sends only a **seal** of it: a hash of the squad data
+   plus a random secret.
+2. B accepts, picks a squad and sends its seal.
+3. Once A has B's seal, A sends the real squad and the secret; B does the same once it has
+   A's. Each side checks the other's squad matches its seal, so nobody can switch after
+   seeing the other's pick.
+4. Both simulate with the duel id as the seed and get the same result, then store the result
+   and the replay.
+
+Nobody needs to be online at the same time; every step waits until the other side is back
+(like Quiz Duel). A squad snapshot is about 150 bytes, a seal about 20.
+
+**What you know about your opponent:** **Open.** Proposal: before picking, you see the type
+mix of each of their three squads ("3 Armor 2 Magic", "Assassin heavy", "mixed") but not which
+one they'll send, so it's a guess between known options rather than blind luck. Their past
+duels against you could show what they sent before.
+
+**Open:** best of 3 (each round both send one squad, a squad can't be sent twice) instead of a
+single fight.
 
 Messages go through a paced queue like Grandma's Game Box's Box/Comm.lua (copied, since this
 is its own addon): burst then 1 per second, deduplicated, offline players retried rarely.
 
-**Open:** fairness, the hardest question. Current proposal: the power cap from 5.3. The
-challenger picks the cap, both build a team under it. Alternatives considered: raw (strongest
-collection wins) and scaling both teams to the same power (hides what you collected).
+**Open:** fairness. The hidden pick and the type triangle already mean the stronger collection
+doesn't simply win. On top, the power cap from 5.3: the challenger picks the cap, and the
+squads both send must fit under it. Alternatives considered: raw (strongest collection wins)
+and scaling both squads to the same power (hides what you collected).
 
 Rating: simple Elo per opponent and overall, per character.
 
@@ -182,11 +234,11 @@ Rating: simple Elo per opponent and overall, per character.
   **gone**. It moves to a "Hall of the Fallen" (per account): character, level, days survived,
   card count, best card, duel record. You can start a new one.
 - Hardcore means complete loss, on purpose.
-- **Open:** normal bestiaries. Idea: dying loses a random card from your active team of five.
+- **Open:** normal bestiaries. Idea: dying loses a random card from one of your squads.
 
 ## 8. Saved data
 
-- **Per character** (`BestiaryChar`): cards, team, mode (normal/hardcore), alive, duels,
+- **Per character** (`BestiaryChar`): cards, three squads, mode (normal/hardcore), alive, duels,
   rating, anti-farming counters, mob info cache.
 - **Account** (`BestiaryAccount`): Hall of the Fallen, settings, a shared mob info cache
   (npcId -> family, classification), so alts don't need to target a mob first.
@@ -196,8 +248,12 @@ Per character, because the hardcore twist is about that character's life.
 ## 9. UI
 
 - **Collection:** grid of cards, filters by family/rarity/zone, card detail with stats and
-  abilities. Cards are 2D: the mob's name, family icon as art, rarity border, stars.
-- **Team:** five slots, drag cards in, shows family bonuses and team power.
+  abilities. Cards are 2D: the mob's name, family icon as art, rarity border, stars, and the
+  combat type as a badge (shield, flame, dagger).
+- **Squads:** three squads of five slots, drag cards in; each shows its type mix, family
+  bonuses and power.
+- **Pick screen:** before a duel, your three squads side by side (and what you know about
+  theirs); pick one and lock it in.
 - **Duels:** list like Quiz Duel (challenge, incoming, finished) with replays.
 - **Replay:** both teams side by side, hits and deaths played back over a few seconds, skip
   button.
@@ -207,9 +263,10 @@ Per character, because the hardcore twist is about that character's life.
 ## 10. First version (MVP)
 
 1. Kill tracking, mob info cache, card drops, collection list (no fancy UI).
-2. Card stats and abilities from the formula; team of five.
-3. Battle simulation with a test fight against a fixed dummy team, replay as text.
-4. Duels over whispers.
+2. Card stats, combat types and abilities from the formula; three squads.
+3. Battle simulation with a test fight against a fixed dummy squad, replay as text; headless
+   balance runs for the type triangle.
+4. Duels over whispers, with sealed picks.
 5. Hardcore mode and the Hall of the Fallen.
 6. Proper UI (card grid, replay with visuals), balancing.
 
@@ -224,15 +281,22 @@ both sides for the same seed).
 - Hardcore is complete loss (7).
 - Cards are 2D (9).
 - Own addon, own git repo and GitHub.
+- Combat types Armor, Magic, Assassin per card; squads mix them freely (3.5).
+- Three prepared squads per player; both pick one in secret before a duel (6).
+- A perfect counter wins easily (3.5).
 
 ## 12. Open questions
 
-1. Fight rules and strategy, and with them duel fairness: the power cap proposal (5.3, 6).
-2. Stars: how many copies per star (3.3), after 1.
-3. Penalty on death for normal bestiaries (7).
+1. Exact fight rules (5.2), then balance with headless runs.
+2. Combat type from watching the mob, or only from family and NPC id? (3.5)
+3. What you see of the opponent's squads before picking (6).
+4. Single fight or best of 3 (6).
+5. Power cap on top of the hidden pick? (6)
+6. Stars: how many copies per star (3.3), after 1.
+7. Penalty on death for normal bestiaries (7).
 
 ## 13. Mockup
 
-`Bestiary.toc` loads a clickable mockup with made-up cards: the collection with a team of
-five, and a duel replay against a fixed team. Nothing is tracked or sent; it's only there to
+`Bestiary.toc` loads a clickable mockup with made-up cards: the collection with one team of
+five, and a duel replay against a fixed team. It predates combat types and the three squads. Nothing is tracked or sent; it's only there to
 see the look in WoW. `/bestiary` or `/bst` opens it.
