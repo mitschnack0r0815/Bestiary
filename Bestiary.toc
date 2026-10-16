@@ -4,7 +4,9 @@
 ## Author: You
 ## Version: 0.0.1-mockup
 
-# Mockup: made-up cards, nothing tracked or sent (see ARCHITECTURE.md)
+# Mockup: made-up cards and squads, nothing tracked or sent (see ARCHITECTURE.md).
+# The fight follows the proposed rules (5.2).
 Mock\Data.lua
+Mock\Fight.lua
 UI\Card.lua
 UI\Window.lua

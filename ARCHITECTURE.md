@@ -428,6 +428,14 @@ both sides for the same seed).
 
 ## 13. Mockup
 
-`Bestiary.toc` loads a clickable mockup with made-up cards: the collection with one team of
-five, and a duel replay against a fixed team. It predates combat types and the three squads. Nothing is tracked or sent; it's only there to
+`Bestiary.toc` loads a clickable mockup with made-up cards:
+
+- **Squads:** three squads of up to 7 cards (front left), drag and drop, leader (shift-click),
+  power bar against the cap, type mix, family bonuses, roster checks, and a quick test
+  against equal-power Armor, Magic and Assassin training squads.
+- **Duel:** a twist, a hidden pick of one of your squads while the opponent picks one of
+  theirs, the replay, then stamina changes (which show up in the squad builder).
+
+The fight in `Mock/Fight.lua` follows the rules in 5.2; headless runs of pure squads at
+equal power show the triangle holding at low, middle and high power. Nothing is tracked or sent; it's only there to
 see the look in WoW. `/bestiary` or `/bst` opens it.
