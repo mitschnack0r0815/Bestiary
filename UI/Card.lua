@@ -1,9 +1,10 @@
 local _, ns = ...
 
--- A 2D card: rounded frame in the rarity color (the game's tooltip border), the family icon as
--- round portrait art with a rarity ring, a round combat type badge, level, stars, then attack,
--- health and speed. Below them a bar: stamina (squad builder) or health (duel), which can play
--- hits and deaths.
+-- A 2D card: rounded frame in the rarity color (the game's tooltip border), the name, round art
+-- (the creature's 3D portrait, or its spell or family icon) in a ring of the rarity color (the
+-- dragon ring for leaders), the combat type badge bottom left and the family badge bottom right,
+-- stars, then attack, health and speed. Below them a bar: stamina (squad builder) or health
+-- (duel), which can play hits and deaths.
 local Card = {}
 ns.Card = Card
 
@@ -12,7 +13,13 @@ Card.WIDTH, Card.HEIGHT = 86, 128
 local ART = 44
 local BADGE = 18
 local STAR = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1"
-local CROWN = "Interface\\GroupFrame\\UI-Group-LeaderIcon"
+local DRAGON_SIZE = 1.5 -- the dragon ring around leaders, times the art size
+-- Models can't be cut round, so the round frame is drawn above the model: a cover in the card's
+-- color hides the model's corners outside the circle, the ring sits on top of that
+local RING = "Interface\\AddOns\\Bestiary\\Media\\RingBorder"
+local COVER = "Interface\\AddOns\\Bestiary\\Media\\RingCover"
+local CARD_BG = { 0.07, 0.06, 0.06 }
+ns.RING, ns.RING_COVER = RING, COVER
 local ROUND_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local STAT_COLORS = { attack = { 1, 0.45, 0.4 }, health = { 0.4, 1, 0.45 }, speed = { 1, 0.85, 0.35 } }
 
@@ -48,6 +55,108 @@ local function Medallion(frame, size, ring, layer)
 	return holder
 end
 
+-- The creature's 3D portrait in a model frame over an art texture, zoomed onto its face like
+-- the target frame. The game draws any creature it has seen by NPC id; until the model is
+-- there (or if it never is), the icon in the art texture shows. Made-up cards have no NPC id.
+local PORTRAIT_BG = { 0.09, 0.08, 0.1 }
+
+-- Stands still: no idle animation, facing the camera
+local function Freeze(model)
+	if model.SetRotation then
+		model:SetRotation(0)
+	end
+	if model.FreezeAnimation then
+		model:FreezeAnimation(0, 0, 0)
+	elseif model.SetAnimation then
+		model:SetAnimation(0)
+	end
+	if model.SetPaused then
+		model:SetPaused(true)
+	end
+end
+
+-- The dragon ring around leaders: the game's elite dragon border if this client has the atlas,
+-- else the dragon cut from the elite target frame
+local DRAGON_ATLASES = { "worldquest-questmarker-dragon", "worldquest-questmarker-dragon-silver" }
+local function SetDragon(texture)
+	if texture.SetAtlas and C_Texture and C_Texture.GetAtlasInfo then
+		for _, atlas in ipairs(DRAGON_ATLASES) do
+			if C_Texture.GetAtlasInfo(atlas) then
+				texture:SetAtlas(atlas)
+				texture.atlas = true
+				return
+			end
+		end
+	end
+	-- UI-TargetingFrame-Elite: 256 x 128, the portrait's center at about (182, 44); the dragon
+	-- curls around it to the top and right
+	texture:SetTexture("Interface\\TargetingFrame\\UI-TargetingFrame-Elite")
+	texture:SetTexCoord(118 / 256, 246 / 256, 0, 108 / 128)
+end
+ns.SetDragon = SetDragon
+
+function ns.SetPortrait(model, art, data)
+	if not (data.npcId and model.SetCreature) then
+		model:Hide()
+		return
+	end
+	model.art, model.icon = art, data.art or ns.FAMILIES[data.family].icon
+	if model.npcId ~= data.npcId then
+		model.npcId = data.npcId
+		model.loaded = false
+		model:ClearModel()
+		model:SetCreature(data.npcId)
+	end
+	if model.SetPortraitZoom then
+		model:SetPortraitZoom(1)
+	end
+	if model.loaded then
+		art:SetColorTexture(unpack(PORTRAIT_BG))
+		Freeze(model)
+	end
+	model:Show()
+end
+
+local function OnModelLoaded(model)
+	model.loaded = true
+	if model.art then
+		model.art:SetColorTexture(unpack(PORTRAIT_BG)) -- a plain backdrop behind the model
+	end
+	if model.SetPortraitZoom then
+		model:SetPortraitZoom(1)
+	end
+	Freeze(model)
+end
+
+function ns.SetupPortrait(model)
+	model:SetScript("OnModelLoaded", OnModelLoaded)
+end
+
+-- Cards in a scroll frame: models may not be clipped by it, so a card's model only shows while
+-- its art is fully inside the visible part. Hooked to the scroll frame; call after laying out.
+function ns.ClipCards(scroll, cards)
+	local function Clip()
+		local top, bottom = scroll:GetTop(), scroll:GetBottom()
+		if not top then
+			return
+		end
+		for _, card in ipairs(cards) do
+			local artTop, artBottom = card.art:GetTop(), card.art:GetBottom()
+			local inside = artTop and artTop <= top + 1 and artBottom >= bottom - 1
+			card.model:SetAlpha(inside and 1 or 0)
+		end
+	end
+	if not scroll.clipHooked then
+		scroll.clipHooked = true
+		scroll:HookScript("OnVerticalScroll", Clip)
+		scroll:HookScript("OnScrollRangeChanged", Clip)
+		scroll:HookScript("OnShow", Clip)
+	end
+	scroll.clipCards = cards
+	Clip()
+	C_Timer.After(0, Clip) -- once the new layout has positions
+end
+
 local Mixin = {}
 
 function Card.Create(parent)
@@ -62,12 +171,6 @@ function Card.Create(parent)
 		card:SetBackdropColor(0.07, 0.06, 0.06, 0.96)
 	end
 
-	-- Soft family color over the top half
-	card.tint = card:CreateTexture(nil, "BACKGROUND", nil, 1)
-	card.tint:SetPoint("TOPLEFT", 4, -4)
-	card.tint:SetPoint("TOPRIGHT", -4, -4)
-	card.tint:SetHeight(Card.HEIGHT / 2)
-
 	card.name = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	card.name:SetPoint("TOPLEFT", 6, -6)
 	card.name:SetPoint("TOPRIGHT", -6, -6)
@@ -75,32 +178,60 @@ function Card.Create(parent)
 	card.name:SetJustifyV("MIDDLE")
 	card.name:SetWordWrap(true)
 
-	card.art = Medallion(card, ART, nil, "ARTWORK")
-	card.art.ring:SetPoint("TOP", 0, -28)
+	-- Round art: the icon (or a dark backdrop) cut round; the ring goes on the layer above the model
+	card.art = card:CreateTexture(nil, "ARTWORK", nil, 2)
+	card.art:SetSize(ART, ART)
+	card.art:SetPoint("TOP", 0, -30)
+	Round(card, card.art)
 
-	card.badge = Medallion(card, BADGE, nil, "OVERLAY")
-	card.badge.ring:SetPoint("CENTER", card.art.ring, "BOTTOMLEFT", 7, 7)
+	-- The creature's 3D portrait over the art (cards from real mobs); the icon stays as the
+	-- fallback underneath. Models draw above the card's textures, so everything that has to be
+	-- on top of the art lives on its own layer above the model.
+	card.model = CreateFrame("PlayerModel", nil, card)
+	card.model:SetAllPoints(card.art)
+	card.model:SetFrameLevel(card:GetFrameLevel() + 1)
+	card.model:Hide()
+	ns.SetupPortrait(card.model)
+	card.top = CreateFrame("Frame", nil, card)
+	card.top:SetAllPoints()
+	card.top:SetFrameLevel(card:GetFrameLevel() + 2)
+	local top = card.top
 
-	card.levelBg = card:CreateTexture(nil, "OVERLAY", nil, 1)
-	card.levelBg:SetSize(20, 20)
-	card.levelBg:SetPoint("CENTER", card.art.ring, "BOTTOMRIGHT", -7, 7)
-	card.levelBg:SetColorTexture(0, 0, 0, 0.85)
-	Round(card, card.levelBg)
-	card.level = card:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
-	card.level:SetPoint("CENTER", card.levelBg)
+	-- Above the model: the cover hides its corners outside the circle, then the ring
+	card.cover = top:CreateTexture(nil, "ARTWORK", nil, 1)
+	card.cover:SetSize(ART + 6, ART + 6)
+	card.cover:SetPoint("CENTER", card.art)
+	card.cover:SetTexture(COVER)
+	card.ring = top:CreateTexture(nil, "ARTWORK", nil, 2)
+	card.ring:SetSize(ART + 6, ART + 6)
+	card.ring:SetPoint("CENTER", card.art)
+	card.ring:SetTexture(RING)
 
-	card.crown = card:CreateTexture(nil, "OVERLAY", nil, 3)
-	card.crown:SetSize(18, 18)
-	card.crown:SetPoint("CENTER", card.art.ring, "TOPLEFT", 6, -4)
-	card.crown:SetTexture(CROWN)
-	card.crown:Hide()
+	card.badge = Medallion(top, BADGE, nil, "OVERLAY")
+	card.badge.ring:SetPoint("CENTER", card.art, "BOTTOMLEFT", 7, 7)
+	-- The family on the other side
+	card.familyBadge = Medallion(top, BADGE, nil, "OVERLAY")
+	card.familyBadge.ring:SetPoint("CENTER", card.art, "BOTTOMRIGHT", -7, 7)
+
+	-- Leaders: the dragon ring around the art
+	card.dragon = top:CreateTexture(nil, "OVERLAY", nil, 1)
+	card.dragon:SetPoint("CENTER", card.art, "CENTER", 0, 0)
+	SetDragon(card.dragon)
+	if card.dragon.atlas then
+		-- Sized so the dragon's own gold ring sits on the edge of the art
+		card.dragon:SetSize(ART * DRAGON_SIZE, ART * DRAGON_SIZE)
+	else
+		card.dragon:SetSize(ART * 1.6, ART * 1.35)
+		card.dragon:SetPoint("CENTER", card.art, "CENTER", 6, 2)
+	end
+	card.dragon:Hide()
 
 	card.stars = {}
 	for i = 1, 5 do
-		local star = card:CreateTexture(nil, "OVERLAY")
+		local star = top:CreateTexture(nil, "OVERLAY")
 		star:SetSize(10, 10)
 		star:SetTexture(STAR)
-		star:SetPoint("TOP", card.art.ring, "BOTTOM", (i - 3) * 11, -3)
+		star:SetPoint("TOP", card.art, "BOTTOM", (i - 3) * 11, -3)
 		card.stars[i] = star
 	end
 
@@ -131,23 +262,23 @@ function Card.Create(parent)
 	highlight:SetPoint("BOTTOMRIGHT", -4, 4)
 	highlight:SetColorTexture(1, 1, 1, 0.07)
 
-	card.check = card:CreateTexture(nil, "OVERLAY", nil, 4)
+	card.check = top:CreateTexture(nil, "OVERLAY", nil, 4)
 	card.check:SetSize(20, 20)
 	card.check:SetPoint("TOPRIGHT", 0, 2)
 	card.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
 	card.check:Hide()
 
 	-- Exhausted: darkened, with a note
-	card.tired = card:CreateTexture(nil, "OVERLAY", nil, 5)
+	card.tired = top:CreateTexture(nil, "OVERLAY", nil, 5)
 	card.tired:SetPoint("TOPLEFT", 4, -4)
 	card.tired:SetPoint("BOTTOMRIGHT", -4, 4)
 	card.tired:SetColorTexture(0, 0, 0, 0.6)
-	card.tiredText = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-	card.tiredText:SetPoint("CENTER", card.art.ring)
+	card.tiredText = top:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	card.tiredText:SetPoint("CENTER", card.art)
 	card.tiredText:SetTextColor(1, 0.4, 0.3)
 
 	-- Red flash when hit
-	card.flash = card:CreateTexture(nil, "OVERLAY", nil, 6)
+	card.flash = top:CreateTexture(nil, "OVERLAY", nil, 6)
 	card.flash:SetPoint("TOPLEFT", 4, -4)
 	card.flash:SetPoint("BOTTOMRIGHT", -4, 4)
 	card.flash:SetColorTexture(1, 0.1, 0.05, 0.45)
@@ -165,8 +296,8 @@ function Card.Create(parent)
 	flashOut:SetOrder(2)
 
 	-- Damage number floating up
-	card.damage = card:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
-	card.damage:SetPoint("CENTER", card.art.ring)
+	card.damage = top:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+	card.damage:SetPoint("CENTER", card.art)
 	card.damage:SetAlpha(0)
 	card.damageAnim = card.damage:CreateAnimationGroup()
 	local appear = card.damageAnim:CreateAnimation("Alpha")
@@ -182,8 +313,8 @@ function Card.Create(parent)
 	fade:SetStartDelay(0.4)
 	fade:SetDuration(0.3)
 
-	card.dead = card:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
-	card.dead:SetPoint("CENTER", card.art.ring)
+	card.dead = top:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+	card.dead:SetPoint("CENTER", card.art)
 	card.dead:SetText("X")
 	card.dead:SetTextColor(0.9, 0.1, 0.1)
 	card.dead:Hide()
@@ -203,15 +334,16 @@ function Mixin:SetCard(data, bar)
 	if self.SetBackdropBorderColor then
 		self:SetBackdropBorderColor(r, g, b, 1)
 	end
-	local fr, fg, fb = unpack(family.color)
-	self.tint:SetColorTexture(fr, fg, fb, 0.12)
 	self.name:SetText(data.name)
 	self.name:SetTextColor(r, g, b)
-	self.art.ring:SetVertexColor(r, g, b)
-	self.art.icon:SetTexture(family.icon)
+	self.ring:SetVertexColor(r, g, b, 1)
+	self.cover:SetVertexColor(CARD_BG[1], CARD_BG[2], CARD_BG[3], 1) -- matches the card behind it
+	self.art:SetTexture(data.art or family.icon)
+	ns.SetPortrait(self.model, self.art, data)
 	self.badge.ring:SetVertexColor(unpack(kind.color))
 	self.badge.icon:SetTexture(kind.icon)
-	self.level:SetText(data.level)
+	self.familyBadge.ring:SetVertexColor(unpack(family.color))
+	self.familyBadge.icon:SetTexture(family.icon)
 	for i, star in ipairs(self.stars) do
 		star:SetShown(i <= data.stars)
 	end
@@ -220,6 +352,7 @@ function Mixin:SetCard(data, bar)
 	self.stats.speed:SetText(data.speed)
 
 	self.barKind = bar
+	self.maxHp = nil
 	self.bar:SetShown(bar ~= nil)
 	if bar == "stamina" then
 		self.bar:SetMinMaxValues(0, 100)
@@ -235,7 +368,7 @@ function Mixin:SetCard(data, bar)
 		self.tiredText:SetText(("Exhausted\n%d duels"):format(data.exhausted))
 	end
 	self:SetDead(false)
-	self:SetLeader(false)
+	self:SetLeader(ns.IsNamed(data)) -- named cards always lead
 	self:SetSelected(false)
 end
 
@@ -244,42 +377,59 @@ function Mixin:SetSelected(selected)
 end
 
 function Mixin:SetLeader(leader)
-	self.crown:SetShown(leader)
+	self.dragon:SetShown(leader)
+	self.ring:SetShown(not leader) -- the dragon is the leader's ring
 end
 
 function Mixin:ShowTooltip()
-	local data = self.data
-	if not data then
-		return
+	if self.data then
+		Card.ShowTooltipFor(self, self.data)
 	end
+end
+
+-- The card's tooltip for any frame (also the loot window's rows)
+function Card.ShowTooltipFor(owner, data)
 	local rarity = ns.RARITIES[data.classification]
 	local kind = ns.TYPES[data.type]
-	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
 	GameTooltip:AddLine(data.name, unpack(rarity.color))
-	GameTooltip:AddLine(("Level %d %s  ·  %s"):format(data.level, data.family, rarity.name), 1, 1, 1)
+	GameTooltip:AddLine(("%s  ·  %s"):format(data.family, rarity.name), 1, 1, 1)
 	GameTooltip:AddLine(data.type, unpack(kind.color))
 	GameTooltip:AddLine(("%d of 5 stars  ·  Power %d"):format(data.stars, data.power), 0.8, 0.8, 0.8)
 	GameTooltip:AddLine(" ")
 	GameTooltip:AddDoubleLine("Attack", data.attack, 1, 1, 1, 1, 1, 1)
 	GameTooltip:AddDoubleLine("Health", data.health, 1, 1, 1, 1, 1, 1)
-	GameTooltip:AddDoubleLine("Speed", data.speed, 1, 1, 1, 1, 1, 1)
+	GameTooltip:AddDoubleLine("Speed", data.speed .. " / " .. ns.MAX_SPEED, 1, 1, 1, 1, 1, 1)
 	if data.armor > 0 then
 		GameTooltip:AddDoubleLine("Armor", data.armor, 1, 1, 1, 1, 1, 1)
 	end
 	GameTooltip:AddDoubleLine("Stamina", data.stamina .. " / 100", 1, 1, 1, 1, 1, 1)
 	GameTooltip:AddLine(" ")
-	if data.classification ~= "normal" then
+	if ns.IsNamed(data) then
+		GameTooltip:AddLine("Named: always leads its squad, one per squad", 1, 0.82, 0, true)
 		GameTooltip:AddLine(kind.leader, 1, 0.82, 0, true)
 	end
-	GameTooltip:AddLine("Caught in " .. data.zone, 0.6, 0.6, 0.6)
+	if data.spell then
+		GameTooltip:AddLine("Signature: " .. data.spell, 0.8, 0.8, 0.8)
+	end
+	if data.zone ~= "" then
+		GameTooltip:AddLine("Caught in " .. data.zone, 0.6, 0.6, 0.6)
+	end
 	GameTooltip:Show()
 end
 
+-- Health in a fight can go above the card's own (family bonuses)
+function Mixin:SetMaxHealth(maxHp)
+	self.maxHp = maxHp
+	self:SetHealth(maxHp)
+end
+
 function Mixin:SetHealth(hp)
-	self.bar:SetMinMaxValues(0, self.data.health)
+	local maxHp = self.maxHp or self.data.health
+	self.bar:SetMinMaxValues(0, maxHp)
 	self.bar:SetValue(hp)
 	self.stats.health:SetText(hp)
-	local part = hp / self.data.health
+	local part = hp / maxHp
 	self.bar:SetStatusBarColor(part > 0.5 and 0.2 or 0.9, part > 0.25 and 0.85 or 0.2, 0.2)
 end
 
@@ -297,9 +447,17 @@ function Mixin:Hit(damage, hp, magic)
 	self.flashAnim:Play()
 end
 
+function Mixin:Heal(amount, hp)
+	self:SetHealth(hp)
+	self.damage:SetText("+" .. amount)
+	self.damage:SetTextColor(0.3, 1, 0.4)
+	self.damageAnim:Stop()
+	self.damageAnim:Play()
+end
+
 function Mixin:SetDead(dead)
 	self:SetAlpha(dead and 0.45 or 1)
-	self.art.icon:SetDesaturated(dead)
+	self.art:SetDesaturated(dead)
 	self.dead:SetShown(dead)
 end
 

@@ -1,12 +1,29 @@
 ## Interface: 16001
 ## Title: Bestiary
-## Notes: Collect cards of the mobs you kill and duel other players' teams. MOCKUP for now.
+## Notes: Collect cards of the mobs you fight and duel other players' squads. PROTOTYPE.
 ## Author: You
-## Version: 0.0.1-mockup
+## Version: 0.0.2-prototype
+## SavedVariables: BestiaryAccount
+## SavedVariablesPerCharacter: BestiaryChar
 
-# Mockup: made-up cards and squads, nothing tracked or sent (see ARCHITECTURE.md).
-# The fight follows the proposed rules (5.2).
+# Shared look and rules; the Squads and Duel tabs still run on made-up cards (mockup)
 Mock\Data.lua
 Mock\Fight.lua
+
+# Prototype: studying mobs (unit API, the combat log is closed to addons), cards, drops (see ARCHITECTURE.md 4)
+Core\Config.lua
+Core\Named.lua
+Core\Tracker.lua
+Core\Cards.lua
+Core\Stats.lua
+
+# UI
 UI\Card.lua
 UI\Window.lua
+UI\Collection.lua
+UI\Studying.lua
+UI\Stats.lua
+UI\Info.lua
+UI\Loot.lua
+UI\Test.lua
+UI\MinimapButton.lua
