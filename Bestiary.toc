@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: Bestiary
+## Notes: Collect cards of the mobs you kill and duel other players' teams. MOCKUP for now.
+## Author: You
+## Version: 0.0.1-mockup
+
+# Mockup: made-up cards, nothing tracked or sent (see ARCHITECTURE.md)
+Mock\Data.lua
+UI\Card.lua
+UI\Window.lua
