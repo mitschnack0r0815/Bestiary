@@ -218,12 +218,28 @@ single fight.
 Messages go through a paced queue like Grandma's Game Box's Box/Comm.lua (copied, since this
 is its own addon): burst then 1 per second, deduplicated, offline players retried rarely.
 
-**Open:** fairness. The hidden pick and the type triangle already mean the stronger collection
-doesn't simply win. On top, the power cap from 5.3: the challenger picks the cap, and the
-squads both send must fit under it. Alternatives considered: raw (strongest collection wins)
-and scaling both squads to the same power (hides what you collected).
+**Fairness:** the hidden pick and the type triangle already mean the stronger collection
+doesn't simply win. On top, the **power cap** (decided, 5.3): the challenger picks the cap,
+and the squads both send must fit under it, like the points limit of a Warcry warband. Each of
+your three squads can be built for a different cap, or you rebuild before locking in.
 
 Rating: simple Elo per opponent and overall, per character.
+
+## 6.1 Ideas from Warhammer Warcry (to decide)
+
+Warcry's roster building fits this game; candidates to borrow:
+
+| Warcry | In Bestiary | Proposal |
+|---|---|---|
+| Points limit per warband | Power cap per duel; cards cost their power; caps like 300 / 600 / 1000 | **Decided** |
+| Warband size varies | 3 to 7 cards per squad instead of a fixed 5: two strong cards or seven weak ones | First version |
+| A leader is required | One leader per squad (Elite, Rare or Boss card) with a squad-wide leader ability | First version |
+| Runemarks (keywords abilities refer to) | Family and combat type are the keywords abilities refer to ("other Undead get +armor") | First version |
+| Battleplan and twist cards | Each duel draws a twist, revealed at the challenge before both pick ("Fog: Assassins act twice in round 1", "Consecrated ground: Undead lose armor", "Ambush: back row is hit first"); shifts the triangle every duel | First version |
+| Limits on allies and monsters | At most one Legendary; no card above 40% of the cap | First version |
+| Battle groups (Dagger / Shield / Hammer) | Vanguard fights from round 1, Reserve joins in round 3: a hidden reserve is another surprise | Later |
+| Campaign: injuries and experience | Surviving cards gain XP; cards that die are injured and miss your next duel (could be the normal-mode death penalty, 7) | Later |
+| Wild dice fuel abilities | A seeded momentum roll per round that triggers stronger abilities | Maybe; adds luck |
 
 ## 7. Hardcore
 
@@ -284,6 +300,7 @@ both sides for the same seed).
 - Combat types Armor, Magic, Assassin per card; squads mix them freely (3.5).
 - Three prepared squads per player; both pick one in secret before a duel (6).
 - A perfect counter wins easily (3.5).
+- Power cap per duel, picked by the challenger (6).
 
 ## 12. Open questions
 
@@ -291,7 +308,7 @@ both sides for the same seed).
 2. Combat type from watching the mob, or only from family and NPC id? (3.5)
 3. What you see of the opponent's squads before picking (6).
 4. Single fight or best of 3 (6).
-5. Power cap on top of the hidden pick? (6)
+5. Which Warcry ideas go in (6.1), and the cap sizes.
 6. Stars: how many copies per star (3.3), after 1.
 7. Penalty on death for normal bestiaries (7).
 
