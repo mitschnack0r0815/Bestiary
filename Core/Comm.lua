@@ -34,6 +34,7 @@ local pausedUntil = 0
 local lastSent = {} -- player key -> GetTime() of our last whisper
 local offlineAt = {} -- player key -> GetTime() of their last bounce
 local parts = {} -- sender key .. message id -> { total, got, list, at }
+local heard = {} -- player key -> GetTime() of their last whisper to us
 local partId = 0
 
 Comm.sent = 0 -- whispers actually sent (for tests and /bst debug)
@@ -116,6 +117,12 @@ function Comm.Send(msg, target)
 	end
 end
 
+-- Seconds since this player last whispered us (this session), nil if they haven't
+function Comm.LastHeard(name)
+	local at = name and heard[Key(name)]
+	return at and GetTime() - at or nil
+end
+
 function Comm.IsOffline(name)
 	return name and offlineAt[Key(name)] ~= nil
 end
@@ -138,6 +145,7 @@ function Comm.Receive(prefix, msg, channel, sender)
 	end
 	local key = Key(sender)
 	offlineAt[key] = nil -- anything from them means they're online
+	heard[key] = GetTime()
 	local id, index, total, text = msg:match("^~(%x+):(%d+)/(%d+)~(.*)$")
 	if id then
 		index, total = tonumber(index), tonumber(total)

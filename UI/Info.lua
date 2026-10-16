@@ -7,7 +7,7 @@ local TEXT_WIDTH = WIDTH - 70
 local INSET = C_XMLUtil and C_XMLUtil.GetTemplateInfo and C_XMLUtil.GetTemplateInfo("InsetFrameTemplate")
 	and "InsetFrameTemplate" or nil
 
-local page = ns.AddPage("Info", "Interface\\Icons\\INV_Scroll_03", 7)
+local page = ns.AddPage("Info", "Interface\\Icons\\INV_Scroll_03", 8)
 
 local title = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 title:SetPoint("TOPLEFT", 72, -34)
@@ -52,7 +52,7 @@ local function Sections()
 		("In a group x%.2f, in a raid x%.2f. Each card of the same mob in the last hour halves the chance."):format(ns.GROUP_FACTOR.party, ns.GROUP_FACTOR.raid),
 		("Starter boost: x%d while you have fewer than %d different cards, then it fades (halves every %d cards) and is gone at %d."):format(
 			ns.STARTER_BOOST, ns.STARTER_CARDS, ns.STARTER_HALF, ns.STARTER_END),
-		("Getting a card you already have adds a star (up to %d). Each star makes the card %s stronger. The mob's level doesn't matter: grey mobs drop cards too."):format(ns.MAX_STARS, Pct(ns.STAR_BONUS)),
+		("Normal (Common) cards can be owned up to %d times: getting one again gives another copy, and a squad can use as many copies as you own. After that, and for all rarer cards, getting a card again adds a star (up to %d). Each star makes the card %s stronger. The mob's level doesn't matter: grey mobs drop cards too."):format(ns.MAX_COPIES, ns.MAX_STARS, Pct(ns.STAR_BONUS)),
 	})
 
 	local rarities = {}
@@ -102,14 +102,14 @@ local function Sections()
 	})
 
 	Section("Squads", {
-		("You build three squads of at least %d cards, front to back. Before a duel you pick one in secret; you can switch until you press Ready."):format(ns.MIN_SQUAD),
-		("Beyond that only power counts: the sum of a squad's cards must fit under the cap of %d. And at most one named card (the leader)."):format(ns.POWER_CAP),
+		"You build three squads, front to back, as many cards as fit under the power cap. Before a duel you pick one in secret; you can switch until you press Ready.",
+		("Only power counts: the sum of a squad's cards must fit under the cap of %d. And at most one named card (the leader)."):format(ns.POWER_CAP),
 		"Where a card stands matters: the front takes the Tank and Mage hits, the back takes the Assassin strikes.",
 	})
 
 	Section("Friends and duels", {
-		"Only Bestiary friends duel each other and share the board. Add a friend by name on the Board tab: they get a request and have to say yes.",
-		"Challenge a friend on the Duel tab (type their name or target them) or click them on the Board tab. They pick a squad first, in secret; then you pick yours. Both clients play the same fight.",
+		"Only Bestiary friends duel each other and share the board. Add a friend on the Friends tab (by name or your target): they get a request and have to say yes.",
+		"Challenge a friend on the Duel tab (type their name or target them) or click Duel next to them on the Friends tab. They pick a squad first, in secret; then you pick yours. Both clients play the same fight.",
 	})
 
 	Section("The fight", {

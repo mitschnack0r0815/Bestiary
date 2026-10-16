@@ -7,24 +7,23 @@ local _, ns = ...
 -- or delete it (deleting leaves a marker so the deletion syncs too). Posts older than KEEP_DAYS
 -- are dropped everywhere by the same rule.
 --
--- Sync with as few whispers as possible (messages only from and to contacts):
---   P|id|created|modified|deleted|author|text   a post version; a new post or edit goes once
---                                               to every contact, nothing comes back
---   H|hash|since|reply|stamp                    on login, to each contact: a fingerprint of our
---                                               board (taken at "stamp") and when we were last
---                                               in sync with them.
---                                               Same fingerprint: no answer (1 whisper).
---                                               Different: they send what they got after "since"
---                                               and answer with their own H (reply=1), and we
---                                               send what they're missing the same way.
+-- Nothing syncs on its own (decided): posts, edits and deletes stay here until you press Sync
+-- now. Then, with as few whispers as possible (messages only from and to friends):
+--   H|hash|since|reply|stamp                    to each friend: a fingerprint of our board
+--                                               (taken at "stamp") and when we were last in
+--                                               sync with them. Same fingerprint: no answer
+--                                               (1 whisper). Different: they send what they
+--                                               got after "since" and answer with their own H
+--                                               (reply=1), and we send what they're missing
+--                                               the same way, so one click syncs both sides.
+--   P|id|created|modified|deleted|author|text   post versions, several joined by "||"
 -- "got" is when this client stored a version (server time), so posts relayed from a third
--- contact are found too. Anything lost heals on the next login sync.
+-- friend are found too. Anything lost heals on the next sync.
 local Board = {}
 ns.Board = Board
 
 local KEEP_DAYS = 60
 local MAX_TEXT = 200
-local SYNC_DELAY = 15 -- seconds after login before syncing
 
 local function Now()
 	return GetServerTime and GetServerTime() or time()
@@ -206,7 +205,6 @@ local function OnFriendMessage(sender, what)
 		end
 	elseif what == "ok" and contact and contact.state == "asked" then
 		Befriend(contact)
-		Board.Sync(contact.name) -- we asked, so we say hello: the board catches up both ways
 	elseif what == "no" and contact and contact.state == "asked" then
 		contacts[Key(sender)] = nil
 		Changed()
@@ -218,14 +216,6 @@ end
 
 -- Posting ------------------------------------------------------------------------------------
 
-local function Push(post)
-	local msg = Wire(post)
-	for _, contact in pairs(Data().contacts) do
-		if contact.state == "friend" then
-			ns.Comm.Send(msg, contact.name)
-		end
-	end
-end
 
 function Board.Post(text)
 	text = Clean(text)
@@ -237,7 +227,6 @@ function Board.Post(text)
 	local post = { id = ("%s-%d-%d"):format(Key(Me()), now, data.seq), author = Me(), created = now,
 		modified = now, got = now, text = text }
 	data.posts[post.id] = post
-	Push(post)
 	Changed()
 	return post
 end
@@ -255,7 +244,6 @@ function Board.Edit(id, text)
 	end
 	local now = Now()
 	post.text, post.modified, post.got = text, math.max(now, post.modified + 1), now
-	Push(post)
 	Changed()
 end
 
@@ -266,7 +254,6 @@ function Board.Delete(id)
 	end
 	local now = Now()
 	post.text, post.deleted, post.modified, post.got = "", true, math.max(now, post.modified + 1), now
-	Push(post)
 	Changed()
 end
 
@@ -385,11 +372,3 @@ end
 
 ns.Comm.Register("board", Board.Receive)
 
--- Sync with everyone a little after login
-local events = CreateFrame("Frame")
-events:RegisterEvent("PLAYER_LOGIN")
-events:SetScript("OnEvent", function()
-	if C_Timer then
-		C_Timer.After(SYNC_DELAY, Board.SyncAll)
-	end
-end)

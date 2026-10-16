@@ -22,6 +22,12 @@ local function Stats()
 end
 ns.Stats = Stats
 
+-- Your record against one player: wins, losses, draws (nil if you never dueled them)
+function ns.RecordAgainst(name)
+	local opponents = Stats().duels.opponents
+	return opponents and opponents[ns.Comm and ns.Comm.Key(name) or name:lower()]
+end
+
 -- A card's key: real cards by NPC id, training cards by name
 function ns.StatKey(card)
 	return card.npcId and ("npc" .. card.npcId) or ("card:" .. card.name)
@@ -46,10 +52,16 @@ local function Result(record, winner)
 end
 
 -- A finished duel: events and sides from ns.Fight; you are side 1
-function ns.RecordDuel(events, winner, sides, squadName, twist)
+function ns.RecordDuel(events, winner, sides, squadName, twist, opponent)
 	local stats = Stats()
 	local duels = stats.duels
 	Result(duels, winner)
+	if opponent then
+		duels.opponents = duels.opponents or {}
+		local key = ns.Comm and ns.Comm.Key(opponent) or opponent:lower()
+		duels.opponents[key] = duels.opponents[key] or {}
+		Result(duels.opponents[key], winner)
+	end
 	if winner == 1 then
 		duels.streak = math.max(0, duels.streak) + 1
 		duels.bestStreak = math.max(duels.bestStreak, duels.streak)
@@ -141,6 +153,12 @@ end
 function ns.RecordForfeit(name)
 	local duels = Stats().duels
 	duels.wins = duels.wins + 1
+	if name then
+		duels.opponents = duels.opponents or {}
+		local key = ns.Comm and ns.Comm.Key(name) or name:lower()
+		duels.opponents[key] = duels.opponents[key] or {}
+		Result(duels.opponents[key], 1)
+	end
 	duels.forfeits = (duels.forfeits or 0) + 1
 	duels.streak = math.max(0, duels.streak) + 1
 	duels.bestStreak = math.max(duels.bestStreak, duels.streak)
@@ -160,6 +178,8 @@ function ns.RecordDrop(result)
 	hunting.drops = hunting.drops + 1
 	if result == "new" then
 		hunting.newCards = hunting.newCards + 1
+	elseif result == "copy" then
+		hunting.copies = (hunting.copies or 0) + 1
 	else
 		hunting.stars = hunting.stars + 1
 	end

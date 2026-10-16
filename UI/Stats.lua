@@ -9,7 +9,7 @@ local TOP = 5 -- entries per leaderboard
 local INSET = C_XMLUtil and C_XMLUtil.GetTemplateInfo and C_XMLUtil.GetTemplateInfo("InsetFrameTemplate")
 	and "InsetFrameTemplate" or nil
 
-local page = ns.AddPage("Stats", "Interface\\Icons\\INV_Misc_Book_04", 6)
+local page = ns.AddPage("Stats", "Interface\\Icons\\INV_Misc_Book_04", 7)
 
 local title = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 title:SetPoint("TOPLEFT", 72, -34)
@@ -170,7 +170,8 @@ local function CollectionSections()
 	Section(Icon("Interface\\Icons\\Ability_Hunter_BeastTaming", 16) .. " Hunting", {
 		("Kills that counted:  |cffffffff%d|r"):format(hunting.kills),
 		("Drops:  |cffffffff%d|r   %s"):format(hunting.drops,
-			Grey(("%s, %s"):format(Count(hunting.newCards, "new card", "new cards"), Count(hunting.stars, "star", "stars")))),
+			Grey(("%s, %s, %s"):format(Count(hunting.newCards, "new card", "new cards"),
+				Count(hunting.copies or 0, "copy", "copies"), Count(hunting.stars, "star", "stars")))),
 		("Drop rate:  |cffffffff%s|r"):format(hunting.kills > 0 and ("%.1f%%"):format(hunting.drops / hunting.kills * 100) or "-"),
 		("Mob types studied:  |cffffffff%d|r   %s"):format(studied, Grey(ready .. " ready to drop")),
 		("Time spent studying:  |cffffffff%d:%02d|r %s"):format(seconds / 60, seconds % 60, Grey("min")),

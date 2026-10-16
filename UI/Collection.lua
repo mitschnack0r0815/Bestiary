@@ -45,6 +45,9 @@ local function Refresh()
 			cards[i] = card
 		end
 		card:SetCard(view)
+		if ns.CanHaveCopies(view) then
+			card:SetCount(ns.Copies(view)) -- 1x to 3x
+		end
 		card:Show()
 	end
 	for i = #collection + 1, #cards do

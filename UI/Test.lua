@@ -11,7 +11,7 @@ local ROW = 20
 local INSET = C_XMLUtil and C_XMLUtil.GetTemplateInfo and C_XMLUtil.GetTemplateInfo("InsetFrameTemplate")
 	and "InsetFrameTemplate" or nil
 
-local page = ns.AddPage("Test", "Interface\\Icons\\INV_Misc_Gear_01", 8)
+local page = ns.AddPage("Test", "Interface\\Icons\\INV_Misc_Gear_01", 9)
 local selected -- npc id
 
 local title = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -162,6 +162,14 @@ end
 local function NextCard(npcId)
 	local owned = BestiaryChar.cards[npcId]
 	if owned then
+		if ns.CanHaveCopies(owned) and ns.Copies(owned) < ns.MAX_COPIES then
+			local copy = {}
+			for key, value in pairs(owned) do
+				copy[key] = value
+			end
+			copy.copies = ns.Copies(owned) + 1
+			return ns.CardView(copy), "copy", owned
+		end
 		if owned.stars >= ns.MAX_STARS then
 			return ns.CardView(owned), "max", owned
 		end
@@ -293,6 +301,7 @@ local function Refresh()
 	if view then
 		preview:SetCard(view)
 		nextDrop:SetText(result == "new" and "Next drop: |cff40ff40new card|r"
+			or result == "copy" and ("Next drop: |cff40ff40copy %d of %d|r"):format(ns.Copies(owned) + 1, ns.MAX_COPIES)
 			or result == "star" and ("Next drop: |cff40ff40+1 star|r (%d to %d)"):format(owned.stars, owned.stars + 1)
 			or ("|cff999999At %d stars, no more drops|r"):format(ns.MAX_STARS))
 		details:SetText(Details(selected, view, result, owned))

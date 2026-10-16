@@ -132,6 +132,7 @@ local function Display(entry)
 		end
 	end
 	local what = entry.result == "new" and "NEW CARD"
+		or entry.result == "copy" and ("COPY %d OF %d"):format(ns.Copies(view), ns.MAX_COPIES)
 		or entry.result == "max" and ("ALREADY " .. ns.MAX_STARS .. " STARS")
 		or ("+1 STAR  ·  " .. view.stars .. " of " .. ns.MAX_STARS)
 	kind:SetText(entry.tag and (what .. "  |cffff8040(" .. entry.tag .. ")|r") or what)

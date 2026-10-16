@@ -73,11 +73,11 @@ function ns.FamilyText(cards, long)
 		if long then
 			parts[#parts + 1] = ("%s |cffffd200%d %s:|r %s"):format(icon, bonus.count, bonus.family, bonus.text)
 		else
-			parts[#parts + 1] = ("%s %d %s"):format(icon, bonus.count, bonus.family)
+			parts[#parts + 1] = ("%s %d"):format(icon, bonus.count)
 		end
 	end
 	if #parts == 0 then
-		return long and "|cff999999No family bonus: 2 or 4 cards of one family give one|r" or "no family bonus"
+		return long and "|cff999999No family bonus: 2 or 4 cards of one family give one|r" or "|cff999999no family bonus|r"
 	end
 	return table.concat(parts, long and "     " or "  ")
 end

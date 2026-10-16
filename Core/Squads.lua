@@ -70,14 +70,63 @@ events:SetScript("OnEvent", function(_, event, name)
 	events:UnregisterEvent("ADDON_LOADED")
 end)
 
--- A card view by its id: one of yours ("npc<id>") or one of the sparring partner's
+-- A card view by its id: one of yours ("npc<id>" for the first copy, "npc<id>:<n>" for the
+-- others) or one of the sparring partner's
 function ns.CardById(id)
 	if sparringCards[id] then
 		return sparringCards[id]
 	end
-	local npcId = type(id) == "string" and tonumber(id:match("^npc(%d+)$"))
+	local npcId, copy = nil, 1
+	if type(id) == "string" then
+		local idText, copyText = id:match("^npc(%d+):?(%d*)$")
+		npcId, copy = tonumber(idText), tonumber(copyText) or 1
+	end
 	local card = npcId and BestiaryChar.cards[npcId]
-	return card and ns.CardView(card) or nil
+	if not card or copy > ns.Copies(card) then
+		return nil
+	end
+	local view = ns.CardView(card)
+	if copy > 1 then
+		view.id, view.copy = ("npc%d:%d"):format(npcId, copy), copy
+	end
+	return view
+end
+
+-- The ids of all copies of a card ("npc12", "npc12:2", ...)
+function ns.CopyIds(view)
+	local saved = BestiaryChar.cards[view.npcId]
+	local ids = { ("npc%d"):format(view.npcId) }
+	for copy = 2, saved and ns.Copies(saved) or 1 do
+		ids[copy] = ("npc%d:%d"):format(view.npcId, copy)
+	end
+	return ids
+end
+
+-- A copy of this card not in the squad yet, nil if all are in it
+function ns.FreeCopy(squad, view)
+	local used = {}
+	for _, id in ipairs(squad.cards) do
+		used[id] = true
+	end
+	for _, id in ipairs(ns.CopyIds(view)) do
+		if not used[id] then
+			return id
+		end
+	end
+end
+
+-- How many copies of this card are in the squad
+function ns.CopiesIn(squad, view)
+	local count, ids = 0, {}
+	for _, id in ipairs(ns.CopyIds(view)) do
+		ids[id] = true
+	end
+	for _, id in ipairs(squad.cards) do
+		if ids[id] then
+			count = count + 1
+		end
+	end
+	return count
 end
 
 -- The saved card behind a view (to change stamina), nil for the sparring partner's
@@ -116,6 +165,8 @@ function ns.ForeignSquad(name, cards)
 end
 
 -- Sparring partner ------------------------------------------------------------------------
+
+local SPARRING_MIN = 3 -- the sparring partner always sends at least this many cards
 
 -- Each squad: its card types front to back
 local SPARRING = {
@@ -188,7 +239,7 @@ function ns.SparringSquads(seed)
 			else
 				view = ns.TrainingCard(kind, ns.BASE_POWER, "Sparring " .. kind, i)
 			end
-			if i > ns.MIN_SQUAD and power + view.power > target then
+			if i > SPARRING_MIN and power + view.power > target then
 				break
 			end
 			view.id = ("sparring:%d:%d"):format(s, i)

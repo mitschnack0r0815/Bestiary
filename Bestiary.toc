@@ -27,6 +27,7 @@ UI\Window.lua
 UI\Collection.lua
 UI\Studying.lua
 UI\Board.lua
+UI\Friends.lua
 UI\Stats.lua
 UI\Info.lua
 UI\Loot.lua

@@ -220,6 +220,12 @@ function Card.Create(parent)
 	card.familyBadge.ring:SetPoint("CENTER", card.art, "BOTTOMRIGHT", -2, 3)
 
 	-- Power, in the top right corner: a gold number in a dark round gem with a gold rim
+	-- How many copies (normal cards): "2x" in the top left corner, beside the art
+	card.count = top:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+	card.count:SetPoint("CENTER", card, "TOPLEFT", 13, -40)
+	card.count:SetTextColor(1, 0.82, 0.2)
+	card.count:Hide()
+
 	card.powerRim = top:CreateTexture(nil, "OVERLAY", nil, 3)
 	card.powerRim:SetSize(24, 24)
 	card.powerRim:SetPoint("CENTER", card, "TOPRIGHT", -13, -13) -- the card's top right corner
@@ -366,6 +372,8 @@ function Mixin:SetCard(data, bar)
 	self.familyBadge.ring:SetVertexColor(unpack(family.color))
 	self.familyBadge.icon:SetTexture(family.icon)
 	self.power:SetText(data.power)
+	self:SetCount(nil)
+	self:SetUsedUp(false)
 	for i, star in ipairs(self.stars) do
 		star:SetShown(i <= data.stars)
 	end
@@ -392,6 +400,21 @@ function Mixin:SetCard(data, bar)
 	self:SetDead(false)
 	self:SetLeader(ns.IsNamed(data)) -- named cards always lead
 	self:SetSelected(false)
+end
+
+-- "2x": how many copies (or how many are still free); nil hides it
+function Mixin:SetCount(count)
+	self.count:SetShown(count ~= nil)
+	if count then
+		self.count:SetText(count .. "x")
+		self.count:SetTextColor(count > 0 and 1 or 0.6, count > 0 and 0.82 or 0.6, count > 0 and 0.2 or 0.6)
+	end
+end
+
+-- Greyed out (all copies already in the squad), still listed
+function Mixin:SetUsedUp(used)
+	self:SetAlpha(used and 0.4 or 1)
+	self.art:SetDesaturated(used)
 end
 
 function Mixin:SetSelected(selected)

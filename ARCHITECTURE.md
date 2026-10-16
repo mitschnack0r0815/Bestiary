@@ -62,7 +62,7 @@ client computes the same numbers:
   The **power** on the card (what counts against the cap) reads like a level (decided): the
   budget scaled to **0-63**, where a Legendary card with 5 stars is 63. A common 1-star card
   is 13, elite 21, rare 24, rare elite 32, boss 39; each star adds about 15%. The cap is
-  110 (was 500 before the rescale; the same squads fit). Stats still come from the budget.
+  100 (was 500 before the rescale). Stats still come from the budget.
   rarityFactor: normal 1, elite 1.6, rare 1.8, rare elite 2.4, boss 3.
   Stars 1-5: +15% each.
 - The budget is split into **Attack / Health / Speed** by family (beasts fast, undead tanky,
@@ -90,7 +90,13 @@ No mob drops anything before the addon has seen its kind fighting for 10 seconds
 different cards, so a new collection fills up fast. After that the extra halves every 5 more
 cards: x5 at 10, x3 at 15, x2 at 20, x1.5 at 25, about x1.1 at 39, gone at 40. Applied after
 the farm halving (4.2); a chance never goes over 100%.
-Getting a card you have adds a star (max 5). How many copies a star needs is a balance
+**Copies** (decided): a normal (Common) card that isn't named can be owned up to **3 times**;
+getting it again gives another copy (the drop says "copy 2 of 3"), and a squad can hold as many
+copies as you own. The Collection tab shows "1x" to "3x" in the top left corner; on the Squads
+tab the badge counts the copies still free, and a card whose copies are all in the squad turns
+grey but stays listed. Copies share stars and stamina (a duel takes the biggest loss once).
+Duels check it too: at most 3 of a normal card, 1 of anything else.
+After 3 copies, and for every rarer card, getting a card you have adds a star (max 5). How many copies a star needs is a balance
 question for later; it depends on how much stars matter in a fight (see 5.3).
 
 ### 3.4 Families
@@ -230,7 +236,7 @@ Dropped for now: unclear what it would add. Can come back if cards need another 
 
 ### 5.1 Squads
 
-You prepare **three squads**, each **at least 3 cards** in order, front to back; beyond that only the power cap counts (decided; at most 8 fit, since the weakest card has power 13). **Leaders**
+You prepare **three squads**, in order, front to back, with **no minimum or maximum size**: only the power cap counts (decided; at most 7 fit under the cap of 100, since the weakest card has power 13). Dropping a card onto another card in the squad swaps the two; a card from the collection dropped onto one takes its slot. **Leaders**
 (decided): only cards of **named mobs** lead, a named card always leads its squad, and a squad
 holds at most one; a squad doesn't need a leader (decided: named cards are hard to get), but at most one. The game has no
 "named" flag, so named means: **Rare, Rare Elite and Boss** (skull level, or in the boss
@@ -427,7 +433,7 @@ is its own addon): burst then 1 per second, deduplicated, offline players retrie
 **Fairness:** the hidden pick and the type triangle already mean the stronger collection
 doesn't simply win. On top, the **power cap** (decided, 5.3): the challenger picks the cap,
 and the squads both send must fit under it, like the points limit of a Warcry warband. Each of
-your three squads can be built for a different cap, or you rebuild before locking in. **For now the cap is fixed at 110** (decided) and can't be picked; the cap button on the
+your three squads can be built for a different cap, or you rebuild before locking in. **For now the cap is fixed at 100** (decided) and can't be picked; the cap button on the
 Squads tab is greyed out.
 
 Rating: simple Elo per opponent and overall, per character.
@@ -438,8 +444,8 @@ Warcry's roster building fits this game. What we take from it:
 
 | Warcry | In Bestiary | Proposal |
 |---|---|---|
-| Points limit per warband | Power cap per duel; cards cost their power; fixed at 110 for now (later maybe a choice of caps) | **Decided** |
-| Warband size varies | At least 3 cards per squad, otherwise only the power cap limits it (up to 8 weak ones) | **Decided** |
+| Points limit per warband | Power cap per duel; cards cost their power; fixed at 100 for now (later maybe a choice of caps) | **Decided** |
+| Warband size varies | No size rule, only the power cap limits it (one strong card up to 7 weak ones) | **Decided** |
 | A leader is required | The named card (Rare, Rare Elite, Boss) always leads; at most one per squad; a leader isn't required (named cards are hard to get) | **Decided** |
 | Runemarks (keywords abilities refer to) | Family and combat type are the keywords abilities refer to ("other Undead get +armor") | **Decided** |
 | Battleplan and twist cards | Each duel draws a twist, revealed at the challenge before both pick (6.2) | **Decided** |
@@ -449,7 +455,7 @@ Warcry's roster building fits this game. What we take from it:
 | Battle groups (Dagger / Shield / Hammer) | Reserves joining later | **No**: too complicated |
 | Wild dice fuel abilities | A seeded roll per round that fuels abilities | **No** |
 
-Squad sizes change 5.1: a squad is at least 3 cards, front to back, led by its named card if it has one.
+Squad sizes change 5.1: a squad is any number of cards that fits the cap, front to back, led by its named card if it has one.
 
 ### 6.2 Twists
 
@@ -488,11 +494,12 @@ sending your best ones, so collection depth matters:
 
 **Only Bestiary friends duel each other** and share the board. Adding a friend by name sends a
 request (`F|ask`); they get a popup and answer `F|ok` or `F|no`. If both asked each other,
-it's a yes on its own. A friendship costs 3 whispers (request, yes, the board's first hello).
+it's a yes on its own. A friendship costs 2 whispers (request, yes).
 Removing a friend only takes them off your list. Challenges from players who aren't your
-friend are declined ("not friends"), and the challenge button refuses them. Friends are on
-the Board tab: click one to duel, right-click to remove; requests show with "!" (click to
-accept, right-click to decline), your open ones with "?".
+friend are declined ("not friends"), and the challenge button refuses them. Friends have their own
+**Friends tab** (`UI/Friends.lua`): add by name or your target; one row per player with the
+status (friend, asked, wants to be your friend), your duel record against them and when you
+last heard from them, and buttons: Duel / Remove, Accept / Decline, or Ask again / Cancel.
 
 A **Board** tab with short posts (up to 200 characters) shared with your friends. Everyone edits and deletes
 only their own posts. Saved account wide (`BestiaryAccount.board`, `Core/Board.lua`,
@@ -500,13 +507,14 @@ only their own posts. Saved account wide (`BestiaryAccount.board`, `Core/Board.l
 a deletion leaves a marker so it syncs too, and posts older than 60 days are dropped
 everywhere by the same rule.
 
-Sync with as few whispers as possible, only with your contacts:
-- **A new post, edit or delete** goes once to each contact. Nothing comes back.
-- **On login** (and with "Sync now") each contact gets a fingerprint of your board, taken at
-  a given time, plus when you were last in sync with them. Same fingerprint: no answer, so
-  1 whisper per contact. Different: they send everything they stored after that time, as one
-  message (in parts if long), and answer with their own fingerprint, so you send what they
-  lack the same way. Nothing they sent you is sent back to them.
+**Nothing syncs on its own** (decided): posts, edits and deletes stay on your side until you
+press **Sync now** on the Board tab. Then, with as few whispers as possible, only with friends:
+- Each friend gets a fingerprint of your board, taken at a given time, plus when you were
+  last in sync with them. Same fingerprint: no answer, so 1 whisper per friend. Different:
+  they send everything they stored after that time, as one message (in parts if long), and
+  answer with their own fingerprint, so you send what they lack the same way: one click
+  syncs both sides (4 whispers when both have something new). Nothing they sent you is sent
+  back to them.
 - Posts travel on: if you share with Bob and Bob with Cid, Cid's posts reach you through Bob.
   Only messages from your contacts are accepted.
 - **Tested headless** with up to four simulated clients: online and offline posting, catching
@@ -596,9 +604,9 @@ both sides for the same seed).
 - Drops show as an alert like the loss of control alert, centered in the upper half (9).
 - Three prepared squads per player; both pick one in secret before a duel (6).
 - A perfect counter wins easily (3.5).
-- Power cap per duel, picked by the challenger (6). **For now one fixed cap of 110** (decided);
+- Power cap per duel, picked by the challenger (6). **For now one fixed cap of 100** (decided);
   picking a cap comes later.
-- From Warcry: at least 3 cards per squad (the cap limits the rest), a leader, keywords, twists, roster limits, cards getting
+- From Warcry: squad size limited only by the power cap, a leader, keywords, twists, roster limits, cards getting
   worn out (6.1). No battle groups, no wild dice, no XP for now.
 - Stamina per card: drained by health lost in duels, refilled by resting, 2 duels out at 0
   (6.3).
@@ -609,7 +617,7 @@ both sides for the same seed).
 
 1. Fight rules: the proposal in 5.2, then balance with headless runs.
 2. Single fight or best of 3 (6).
-3. Cap sizes beyond the fixed 110 (6); stamina numbers (6.3).
+3. Cap sizes beyond the fixed 100 (6); stamina numbers (6.3).
 4. Stars: how many copies per star (3.3), after 1.
 5. Abilities, after the prototype.
 

@@ -51,7 +51,7 @@ ns.MAX_SPEED = 10 -- speed runs from 1 to this
 ns.ALL_TYPES = { "Tank", "Mage", "Assassin", "Healer" }
 ns.TYPE_ORDER = { "Tank", "Mage", "Assassin" }
 
-ns.POWER_CAP = 110 -- one fixed cap for now, in level-like power (choosing a cap comes later)
+ns.POWER_CAP = 100 -- one fixed cap for now, in level-like power (choosing a cap comes later)
 ns.CAPS = { ns.POWER_CAP }
 
 -- Named mobs lead (decided): a card from a named mob is always its squad's leader, and a squad
@@ -73,9 +73,22 @@ function ns.SquadLeader(cards)
 		end
 	end
 end
--- At least 3 cards; beyond that only the power cap counts (decided). The weakest card has power
--- 13, so the cap of 110 never fits more than 8: that's how many slots a squad has.
-ns.MIN_SQUAD, ns.MAX_SQUAD = 3, 8
+
+-- No minimum or maximum size (decided): only the power cap counts. As many slots as the
+-- weakest cards (common, 1 star: 13) fit under the cap: 7 at a cap of 100.
+ns.MIN_SQUAD = 1
+ns.MAX_SQUAD = math.floor(ns.POWER_CAP / ns.PowerFromBudget(ns.BASE_POWER))
+
+-- Copies (decided): a normal (Common) card that isn't named can be owned up to 3 times, and a
+-- squad can hold as many copies as you own. Everything else once.
+ns.MAX_COPIES = 3
+function ns.CanHaveCopies(card)
+	return card.classification == "normal" and not ns.IsNamed(card)
+end
+
+function ns.Copies(card)
+	return ns.CanHaveCopies(card) and math.min(ns.MAX_COPIES, card.copies or 1) or 1
+end
 
 function ns.Power(cards)
 	local power = 0
@@ -85,7 +98,7 @@ function ns.Power(cards)
 	return power
 end
 
--- "2 Tank · 1 Mage · 2 Assassin"
+-- "[shield] 2  [fire] 1  [dagger] 2": each type's icon and how many
 function ns.TypeMix(cards)
 	local counts = {}
 	for _, card in ipairs(cards) do
@@ -95,11 +108,11 @@ function ns.TypeMix(cards)
 	for _, kind in ipairs(ns.ALL_TYPES) do
 		if counts[kind] then
 			local r, g, b = unpack(ns.TYPES[kind].color)
-			parts[#parts + 1] = ("|T%s:16:16:0:0:64:64:5:59:5:59|t |cff%02x%02x%02x%d %s|r"):format(
-				ns.TYPES[kind].icon, r * 255, g * 255, b * 255, counts[kind], kind)
+			parts[#parts + 1] = ("|T%s:16:16:0:0:64:64:5:59:5:59|t |cff%02x%02x%02x%d|r"):format(
+				ns.TYPES[kind].icon, r * 255, g * 255, b * 255, counts[kind])
 		end
 	end
-	return table.concat(parts, "  ·  ")
+	return table.concat(parts, "   ")
 end
 
 -- Roster rules (6.1). Returns a list of { ok, text }; the squad can be locked in if all are ok.
@@ -121,7 +134,7 @@ function ns.Checks(squad)
 	elseif #named > 1 then
 		Check(false, "Only one named card")
 	end
-	Check(#cards >= ns.MIN_SQUAD, #cards >= ns.MIN_SQUAD and ("%d cards"):format(#cards) or ("At least %d cards"):format(ns.MIN_SQUAD))
+	Check(#cards >= ns.MIN_SQUAD, #cards == 0 and "No cards yet" or ("%d %s"):format(#cards, #cards == 1 and "card" or "cards"))
 	local power = ns.Power(cards)
 	Check(power <= squad.cap, power <= squad.cap and "Within cap" or "Over the cap")
 	for _, card in ipairs(cards) do

@@ -9,7 +9,7 @@ local Card = ns.Card
 -- Other pages add themselves with ns.AddPage.
 local WIDTH, HEIGHT = 720, 690
 local STEP = Card.WIDTH + 8 -- the collection grid
-local ROW_STEP = Card.WIDTH + 1 -- squad and duel rows: 8 slots need to fit the window
+local ROW_STEP = ns.MAX_SQUAD > 7 and Card.WIDTH + 1 or Card.WIDTH + 8 -- squad and duel rows fit the window
 local ROW_X = (WIDTH - (ns.MAX_SQUAD * ROW_STEP - 1)) / 2
 
 local function TemplateExists(name)
@@ -290,6 +290,26 @@ local function Place(squad, id, position)
 	tinsert(squad.cards, math.min(position or #squad.cards + 1, #squad.cards + 1), id)
 end
 
+-- A card dropped onto a slot: onto another card of the squad, the two swap places; a card from
+-- the collection takes that card's slot (the other one goes back to the collection); onto an
+-- empty slot, it goes to the end
+local function Drop(squad, id, target)
+	local occupant = squad.cards[target]
+	local from = PositionOf(squad, id)
+	if not occupant then
+		Place(squad, id)
+	elseif from then
+		squad.cards[from], squad.cards[target] = occupant, id -- swap
+	elseif occupant ~= id then
+		local leader = ns.SquadLeader(ns.SquadCards(squad))
+		if leader and leader.id ~= occupant and ns.IsNamed(ns.CardById(id)) then
+			UIErrorsFrame:AddMessage(("Only one named card per squad: %s already leads it."):format(leader.name), 1, 0.2, 0.2)
+			return
+		end
+		squad.cards[target] = id -- replaces it
+	end
+end
+
 -- Dragging: a copy of the card follows the cursor; where it's let go decides what happens
 
 local ghost = Card.Create(UIParent)
@@ -310,7 +330,7 @@ local function StartDrag(card)
 	if not card.data then
 		return
 	end
-	dragging = { id = card.data.id, fromSlot = card.slot }
+	dragging = { id = card.data.id, fromSlot = card.slot, data = card.data }
 	ghost:SetCard(card.data)
 	ghost:Show()
 	GameTooltip:Hide()
@@ -329,8 +349,16 @@ local function StopDrag()
 		end
 	end
 	if target then
-		Place(squad, dragging.id, target)
-		PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+		local id = dragging.id
+		if not dragging.fromSlot then
+			id = ns.FreeCopy(squad, dragging.data) -- from the collection: the next free copy
+		end
+		if id then
+			Drop(squad, id, target)
+			PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+		else
+			UIErrorsFrame:AddMessage(("All your copies of %s are in this squad."):format(dragging.data.name), 1, 0.2, 0.2)
+		end
 	elseif dragging.fromSlot then
 		Remove(squad, dragging.id) -- dragged out of the squad
 		PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
@@ -349,15 +377,33 @@ local function SetupCard(card)
 		end
 		local squad = Squad()
 		local id = self.data.id
-		if mouseButton == "RightButton" or (not self.slot and PositionOf(squad, id)) then
-			Remove(squad, id)
-			PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
-		elseif not self.slot then
-			if self.data.exhausted then
-				UIErrorsFrame:AddMessage(self.data.name .. " is exhausted.", 1, 0.2, 0.2)
+		if self.slot then
+			if mouseButton == "RightButton" then
+				Remove(squad, id) -- this copy leaves the squad
+				PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
 			end
-			Place(squad, id)
-			PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+		else
+			-- a card of the collection: left adds a free copy (with none left, takes them all out),
+			-- right takes one copy out
+			local free = ns.FreeCopy(squad, self.data)
+			local copies = ns.CopyIds(self.data)
+			if mouseButton == "RightButton" or not free then
+				for i = #copies, 1, -1 do
+					if PositionOf(squad, copies[i]) then
+						Remove(squad, copies[i])
+						if mouseButton == "RightButton" then
+							break
+						end
+					end
+				end
+				PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+			else
+				if self.data.exhausted then
+					UIErrorsFrame:AddMessage(self.data.name .. " is exhausted.", 1, 0.2, 0.2)
+				end
+				Place(squad, free)
+				PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+			end
 		end
 		Refresh()
 	end)
@@ -448,7 +494,14 @@ function Refresh()
 			gridCards[i] = card
 		end
 		card:SetCard(data, "stamina")
-		card:SetSelected(PositionOf(squad, data.id) ~= nil)
+		-- copies: how many are still free for this squad; grey once all are in it
+		local inSquad = ns.CopiesIn(squad, data)
+		local free = ns.Copies(data) - inSquad
+		card:SetSelected(inSquad > 0)
+		if ns.CanHaveCopies(data) then
+			card:SetCount(free)
+		end
+		card:SetUsedUp(free <= 0)
 		card:Show()
 	end
 	for i = #list + 1, #gridCards do
@@ -542,10 +595,10 @@ for i = 1, 3 do
 end
 
 local readyButton = Button(duelPage, "Ready", 160, 28)
-readyButton:SetPoint("TOP", 0, -556)
+readyButton:SetPoint("TOP", 0, -572)
 
 local resultText = duelPage:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-resultText:SetPoint("TOP", 0, -592)
+resultText:SetPoint("TOP", 0, -606)
 resultText:SetWidth(WIDTH - 40)
 
 local skipButton = Button(duelPage, "Skip to the end", 140, 26)
@@ -602,8 +655,12 @@ local function ReorderStop()
 		end
 	end
 	if picked and target and target ~= reorderFrom then
-		local id = tremove(picked.cards, reorderFrom)
-		tinsert(picked.cards, math.min(target, #picked.cards + 1), id)
+		local cards = picked.cards
+		if cards[target] then
+			cards[reorderFrom], cards[target] = cards[target], cards[reorderFrom] -- swap
+		else
+			tinsert(cards, tremove(cards, reorderFrom)) -- onto an empty slot: to the end
+		end
 		ShowSquad(myRow, picked)
 		PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
 	end
@@ -681,18 +738,20 @@ end
 
 -- Stamina after the duel (6.3): fighters lose health lost in % x 0.6, the others rest
 local function UpdateStamina(mySquad, sides)
-	local fought = {}
+	local fought = {} -- saved card -> its biggest loss (copies share stamina: counted once)
 	for _, unit in ipairs(sides[1]) do
 		local card = ns.SavedCard(unit.card)
 		local loss = math.floor((1 - unit.hp / unit.maxHp) * 100 * 0.6 + 0.5)
 		if card then
-			fought[card] = true
-			card.stamina = math.max(0, (card.stamina or 100) - loss)
-			if card.stamina == 0 then
-				card.exhausted = 2
-			end
+			fought[card] = math.max(fought[card] or 0, loss)
 		end
 		myRow[unit.slot].note:SetText(loss > 0 and ("|cff6aa0ffstamina -%d|r"):format(loss) or "|cff999999no stamina lost|r")
+	end
+	for card, loss in pairs(fought) do
+		card.stamina = math.max(0, (card.stamina or 100) - loss)
+		if card.stamina == 0 then
+			card.exhausted = 2
+		end
 	end
 	-- Saved on the real cards: the ones that didn't fight rest
 	for _, card in pairs(BestiaryChar.cards) do
@@ -742,7 +801,8 @@ local function Finish()
 	end
 	if not outcome.recorded then
 		outcome.recorded = true
-		ns.RecordDuel(outcome.events, outcome.winner, outcome.sides, outcome.mine.name, outcome.twist)
+		ns.RecordDuel(outcome.events, outcome.winner, outcome.sides, outcome.mine.name, outcome.twist,
+			remote and remote.other or nil)
 	end
 	resultText:SetText(("%s sent |cffffd200%s|r (%s).  New duel: the sparring partner, or challenge a player."):format(
 		opponentName, outcome.theirs.style or outcome.theirs.name, ns.TypeMix(ns.SquadCards(outcome.theirs))))
@@ -834,7 +894,9 @@ local function SetupPicks(enabled)
 			PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
 		end)
 		local cards = ns.SquadCards(squad)
-		pickInfo[i]:SetText(fits and (ns.TypeMix(cards) .. "\n" .. ns.FamilyText(cards)) or "|cffff4040can't be sent|r (see Squads)")
+		local power = ("|cffffd200Power %d / %d|r"):format(ns.Power(cards), squad.cap)
+		pickInfo[i]:SetText(fits and (ns.TypeMix(cards) .. "\n" .. ns.FamilyText(cards) .. "\n" .. power)
+			or ("|cffff4040can't be sent|r (see Squads)\n" .. power))
 	end
 end
 
@@ -846,8 +908,8 @@ local function Board(name, theTwist)
 	twistText:SetText(("Twist: |cffffd200%s|r  %s"):format(theTwist.name, theTwist.text))
 	ShowSquad(myRow, nil)
 	ShowSquad(theirRow, nil)
-	for i = 1, 5 do
-		theirRow[i].back:Show() -- always five, so the size of their pick doesn't show
+	for i = 1, ns.MAX_SQUAD do
+		theirRow[i].back:Show() -- the whole row, so the size of their pick doesn't show
 	end
 	vsText:SetText("VS")
 	vsText:SetTextColor(1, 0.82, 0)
@@ -1140,6 +1202,8 @@ SlashCmdList["BESTIARY"] = function(msg)
 		ns.ChallengePlayer(name ~= "" and name or nil)
 	elseif msg == "board" then
 		ns.Show("Board")
+	elseif msg == "friends" then
+		ns.Show("Friends")
 	elseif msg == "stats" then
 		ns.Show("Stats")
 	elseif msg == "study" or msg == "studying" then
@@ -1147,6 +1211,6 @@ SlashCmdList["BESTIARY"] = function(msg)
 	elseif msg == "" then
 		ns.Toggle()
 	else
-		ns.Print("/bst: open  ·  /bst mob: what's known about your target  ·  /bst debug: print kills and drop rolls  ·  /bst duel [name]: challenge a player (or your target)  ·  /bst board  ·  /bst study  ·  /bst stats  ·  /bst info: how it works  ·  /bst test: test drops  ·  /bst minimap")
+		ns.Print("/bst: open  ·  /bst mob: what's known about your target  ·  /bst debug: print kills and drop rolls  ·  /bst duel [name]: challenge a player (or your target)  ·  /bst friends  ·  /bst board  ·  /bst study  ·  /bst stats  ·  /bst info: how it works  ·  /bst test: test drops  ·  /bst minimap")
 	end
 end

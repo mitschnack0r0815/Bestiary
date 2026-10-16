@@ -159,11 +159,16 @@ function ns.GiveCard(npcId, guid, test)
 	local owned = cards[npcId]
 	local result
 	if owned then
-		if owned.stars >= ns.MAX_STARS then
+		if ns.CanHaveCopies(owned) and ns.Copies(owned) < ns.MAX_COPIES then
+			-- normal cards: another copy first (up to 3), then stars
+			owned.copies = ns.Copies(owned) + 1
+			result = "copy"
+		elseif owned.stars >= ns.MAX_STARS then
 			return
+		else
+			owned.stars = owned.stars + 1
+			result = "star"
 		end
-		owned.stars = owned.stars + 1
-		result = "star"
 	else
 		local view = ns.BuildCard(npcId)
 		if not view then

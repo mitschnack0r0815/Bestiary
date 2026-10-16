@@ -67,6 +67,7 @@ local MENU = {
 	{ text = "Studying", func = function() ns.Show("Studying") end },
 	{ text = "Squads", func = function() ns.Show("Squads") end },
 	{ text = "Duel", func = function() ns.Show("Duel") end },
+	{ text = "Friends", func = function() ns.Show("Friends") end },
 	{ text = "Board", func = function() ns.Show("Board") end },
 	{ text = "Stats", func = function() ns.Show("Stats") end },
 	{ text = "Info", func = function() ns.Show("Info") end },

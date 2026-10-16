@@ -109,8 +109,12 @@ function ns.ValidSquad(cards)
 	if not cards or #cards < ns.MIN_SQUAD or #cards > ns.MAX_SQUAD then
 		return false, "squad size"
 	end
-	local named, power = 0, 0
+	local named, power, count = 0, 0, {}
 	for _, card in ipairs(cards) do
+		count[card.npcId] = (count[card.npcId] or 0) + 1
+		if count[card.npcId] > (ns.CanHaveCopies(card) and ns.MAX_COPIES or 1) then
+			return false, "too many copies of " .. card.name
+		end
 		if card.stars < 1 or card.stars > ns.MAX_STARS then
 			return false, "stars"
 		end
@@ -219,7 +223,7 @@ function Duel.Challenge(name)
 	elseif Duel.Busy() then
 		return nil, "already in a duel"
 	elseif ns.Board and not ns.Board.IsFriend(name) then
-		return nil, name .. " isn't your Bestiary friend yet (add them on the Board tab)"
+		return nil, name .. " isn't your Bestiary friend yet (add them on the Friends tab)"
 	end
 	local duel = { id = Token(), role = "challenger", other = name, nonce = Token(), state = "challenged", started = GetTime() }
 	duel.twist = Twist(duel)

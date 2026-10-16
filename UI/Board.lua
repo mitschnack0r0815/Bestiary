@@ -2,14 +2,13 @@ local _, ns = ...
 local Board = ns.Board
 
 -- Board page: write short posts shared with your Bestiary friends (Core/Board.lua syncs them).
--- Your own posts can be edited and deleted. At the bottom: your friends (click: duel, right-click:
--- remove), open requests, a box to add a friend, and Sync now. Only friends can duel each other.
+-- Your own posts can be edited and deleted. Friends are managed on the Friends tab.
 local WIDTH = ns.WINDOW_WIDTH
 local TEXT_WIDTH = WIDTH - 150
 local INSET = C_XMLUtil and C_XMLUtil.GetTemplateInfo and C_XMLUtil.GetTemplateInfo("InsetFrameTemplate")
 	and "InsetFrameTemplate" or nil
 
-local page = ns.AddPage("Board", "Interface\\Icons\\INV_Letter_15", 5)
+local page = ns.AddPage("Board", "Interface\\Icons\\INV_Letter_15", 6)
 local editing -- id of the own post being edited
 
 local title = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -44,7 +43,7 @@ counter:SetPoint("TOPRIGHT", input, "BOTTOMRIGHT", 0, -1)
 -- Posts
 local inset = CreateFrame("Frame", nil, page, INSET)
 inset:SetPoint("TOPLEFT", 8, -100)
-inset:SetPoint("BOTTOMRIGHT", -8, 96)
+inset:SetPoint("BOTTOMRIGHT", -8, 56)
 local scroll = CreateFrame("ScrollFrame", nil, inset, "UIPanelScrollFrameTemplate")
 scroll:SetPoint("TOPLEFT", 8, -8)
 scroll:SetPoint("BOTTOMRIGHT", -28, 8)
@@ -55,25 +54,14 @@ local empty = inset:CreateFontString(nil, "OVERLAY", "GameFontDisable")
 empty:SetPoint("CENTER")
 empty:SetText("Nothing posted yet. Write something above!")
 
--- Sharing
+-- Who sees it: your friends (managed on the Friends tab)
 local sharedLabel = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-sharedLabel:SetPoint("BOTTOMLEFT", 16, 66)
-sharedLabel:SetText("Friends:")
-local contactButtons = {}
-local addBox = EditBox(160)
-addBox:SetPoint("BOTTOMLEFT", 22, 18)
-local addHint = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-addHint:SetPoint("BOTTOMLEFT", addBox, "TOPLEFT", -4, 2)
-addHint:SetText("Add a friend (they need Bestiary):")
-local addButton = Button(page, "Add", 60, 22)
-addButton:SetPoint("LEFT", addBox, "RIGHT", 6, 0)
-local syncButton = Button(page, "Sync now", 90, 22)
-syncButton:SetPoint("BOTTOMRIGHT", -16, 18)
+sharedLabel:SetPoint("BOTTOMLEFT", 16, 30)
 local hint = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-hint:SetPoint("LEFT", addButton, "RIGHT", 12, 0)
-hint:SetPoint("RIGHT", syncButton, "LEFT", -12, 0)
-hint:SetJustifyH("LEFT")
-hint:SetText("Friends duel each other and share this board. Click a friend to duel, right-click to remove.")
+hint:SetPoint("TOPLEFT", sharedLabel, "BOTTOMLEFT", 0, -4)
+hint:SetText("Nothing is sent on its own: press Sync now to swap posts with your friends. Add friends on the Friends tab.")
+local syncButton = Button(page, "Sync now", 90, 22)
+syncButton:SetPoint("BOTTOMRIGHT", -16, 22)
 
 local function Ago(at)
 	local seconds = (GetServerTime and GetServerTime() or time()) - at
@@ -163,69 +151,15 @@ function Refresh()
 	content:SetHeight(math.max(10, height))
 	empty:SetShown(#posts == 0)
 
-	-- Who it's shared with
-	local contacts = Board.Contacts()
-	for i, contact in ipairs(contacts) do
-		local button = contactButtons[i]
-		if not button then
-			button = Button(page, "", 96, 20)
-			button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-			button:SetScript("OnClick", function(self, mouse)
-				local contact = self.contact
-				if contact.state == "incoming" then
-					if mouse == "RightButton" then
-						Board.DeclineFriend(contact.name)
-					else
-						Board.AcceptFriend(contact.name)
-					end
-				elseif mouse == "RightButton" then
-					Board.RemoveFriend(contact.name)
-				elseif contact.state == "friend" and ns.ChallengePlayer then
-					ns.ChallengePlayer(contact.name)
-				end
-			end)
-			button:SetScript("OnEnter", function(self)
-				local contact = self.contact
-				GameTooltip:SetOwner(self, "ANCHOR_TOP")
-				GameTooltip:AddLine(contact.name)
-				if contact.state == "incoming" then
-					GameTooltip:AddLine("Wants to be your Bestiary friend", 1, 1, 1)
-					GameTooltip:AddLine("Click: accept  ·  Right-click: decline", 0.7, 0.7, 0.7)
-				elseif contact.state == "asked" then
-					GameTooltip:AddLine("Asked, waiting for them to say yes", 1, 1, 1)
-					GameTooltip:AddLine("Right-click: take it back", 0.7, 0.7, 0.7)
-				else
-					GameTooltip:AddLine(contact.lastSync and contact.lastSync > 0
-						and ("Board in sync " .. Ago(contact.lastSync)) or "Board not in sync yet", 1, 1, 1)
-					GameTooltip:AddLine("Click: challenge to a duel  ·  Right-click: remove", 0.7, 0.7, 0.7)
-				end
-				GameTooltip:Show()
-			end)
-			button:SetScript("OnLeave", GameTooltip_Hide)
-			contactButtons[i] = button
-			if i == 1 then
-				button:SetPoint("LEFT", sharedLabel, "RIGHT", 10, 0)
-			else
-				button:SetPoint("LEFT", contactButtons[i - 1], "RIGHT", 4, 0)
-			end
-		end
-		button.contact = contact
-		button:SetText(contact.state == "friend" and contact.name
-			or contact.state == "asked" and ("|cff999999" .. contact.name .. " ?|r")
-			or ("|cff40ff40" .. contact.name .. " !|r"))
-		button:SetShown(i <= 6)
-	end
-	for i = #contacts + 1, #contactButtons do
-		contactButtons[i]:Hide()
-	end
+	-- Who sees it
 	local friends = 0
-	for _, contact in ipairs(contacts) do
+	for _, contact in ipairs(Board.Contacts()) do
 		if contact.state == "friend" then
 			friends = friends + 1
 		end
 	end
-	sharedLabel:SetText(#contacts == 0 and "Friends: |cff999999none yet|r"
-		or (#contacts > 6 and ("Friends (%d):"):format(friends) or "Friends:"))
+	sharedLabel:SetText(friends == 0 and "Shared with: |cff999999no friends yet|r"
+		or ("Shared with your %d %s"):format(friends, friends == 1 and "friend" or "friends"))
 	summary:SetText(("%d posts  ·  %d friends"):format(#posts, friends))
 	UpdateCounter()
 end
@@ -253,20 +187,6 @@ input:SetScript("OnEscapePressed", function(self)
 end)
 input:SetScript("OnTextChanged", UpdateCounter)
 
-local function Add()
-	local name = addBox:GetText()
-	if Board.AddContact(name) then
-		addBox:SetText("")
-		addBox:ClearFocus()
-	else
-		UIErrorsFrame:AddMessage("Type a player's name (not your own).", 1, 0.2, 0.2)
-	end
-end
-addButton:SetScript("OnClick", Add)
-addBox:SetScript("OnEnterPressed", Add)
-addBox:SetScript("OnEscapePressed", function(self)
-	self:ClearFocus()
-end)
 syncButton:SetScript("OnClick", function()
 	Board.SyncAll()
 	ns.Print("Board: syncing with everyone you share it with.")
