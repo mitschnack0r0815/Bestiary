@@ -208,10 +208,8 @@ opened once both are in (commit and reveal):
 Nobody needs to be online at the same time; every step waits until the other side is back
 (like Quiz Duel). A squad snapshot is about 150 bytes, a seal about 20.
 
-**What you know about your opponent:** **Open.** Proposal: before picking, you see the type
-mix of each of their three squads ("3 Armor 2 Magic", "Assassin heavy", "mixed") but not which
-one they'll send, so it's a guess between known options rather than blind luck. Their past
-duels against you could show what they sent before.
+**What you know about your opponent:** nothing about their squads before the fight, only the
+twist (6.2). Reading them comes from knowing the player and what they sent before.
 
 **Open:** best of 3 (each round both send one squad, a squad can't be sent twice) instead of a
 single fight.
@@ -238,7 +236,7 @@ Warcry's roster building fits this game. What we take from it:
 | Runemarks (keywords abilities refer to) | Family and combat type are the keywords abilities refer to ("other Undead get +armor") | **Decided** |
 | Battleplan and twist cards | Each duel draws a twist, revealed at the challenge before both pick (6.2) | **Decided** |
 | Limits on allies and monsters | At most one Legendary; no card above 40% of the cap | **Decided** |
-| Campaign: injuries | Cards get used up and sit out the next duels (6.3) | **Decided** |
+| Campaign: injuries | Cards get worn out and sit out duels: stamina (6.3) | **Decided** |
 | Campaign: experience | Cards gaining XP from duels | Not for now |
 | Battle groups (Dagger / Shield / Hammer) | Reserves joining later | **No**: too complicated |
 | Wild dice fuel abilities | A seeded roll per round that fuels abilities | **No** |
@@ -261,19 +259,22 @@ so the same three squads don't always win. Examples:
 
 Twists are pure rules in the simulation, so both sides apply them the same way.
 
-### 6.3 Fatigue: cards sit out
+### 6.3 Stamina: cards get worn out
 
-Cards get used up, so you can't send your best cards every time and need depth in your
-collection:
+Every card has a **stamina bar** (0 to 100). It makes you rotate cards instead of always
+sending your best ones, so collection depth matters:
 
-- A card that **dies** in a duel is **wounded** and can't be sent for the next X duels
-  (X to tune, around 2).
-- **Open:** do cards that fought and survived also need rest (1 duel), or only the fallen?
-- Wounded cards show a timer ("back in 2 duels"); squads with a wounded card can't be locked
-  in, so your three squads need spares.
+- **Fighting drains it** by how much health the card lost in the duel: stamina loss =
+  health lost in % x a factor (proposal 0.6, so a card that dies loses 60). A card that
+  wasn't hit loses nothing.
+- **Resting refills it:** every duel you play where a card doesn't fight gives it stamina
+  back (proposal +25).
+- **At 0 the card is exhausted:** it sits out your next **2 duels**, then comes back with
+  **full** stamina.
+- Squads with an exhausted card can't be locked in, so your three squads need spares.
 - Counted per duel you play, not per day, so players who duel a lot aren't punished more.
-- Could also be the normal-mode death penalty (7): when your character dies, your squads'
-  cards are wounded for a few duels instead of losing a card.
+- Stamina has no effect on how a card fights; it only decides whether it can be sent.
+- Card UI: a stamina bar under the health, "exhausted: back in 2 duels" when at 0.
 
 ## 7. Hardcore
 
@@ -283,9 +284,9 @@ collection:
 - When the character dies (`PLAYER_DEAD`, or found dead/ghost on login): the bestiary is
   **gone**. It moves to a "Hall of the Fallen" (per account): character, level, days survived,
   card count, best card, duel record. You can start a new one.
-- Hardcore means complete loss, on purpose.
-- **Open:** normal bestiaries. Ideas: dying loses a random card from one of your squads, or
-  wounds your squads' cards for a few duels (6.3).
+- Hardcore means complete loss, on purpose; that's its only death penalty.
+- **Normal bestiaries:** dying drains stamina (6.3) from the cards in your squads (proposal:
+  -50 each), so some may end up exhausted for a couple of duels. No cards are lost.
 
 ## 8. Saved data
 
@@ -336,18 +337,20 @@ both sides for the same seed).
 - Three prepared squads per player; both pick one in secret before a duel (6).
 - A perfect counter wins easily (3.5).
 - Power cap per duel, picked by the challenger (6).
-- From Warcry: 3-7 cards per squad, a leader, keywords, twists, roster limits, fatigue (6.1).
-  No battle groups, no wild dice, no XP for now.
+- From Warcry: 3-7 cards per squad, a leader, keywords, twists, roster limits, cards getting
+  worn out (6.1). No battle groups, no wild dice, no XP for now.
+- Stamina per card: drained by health lost in duels, refilled by resting, 2 duels out at 0
+  (6.3).
+- You see nothing of the opponent's squads before the fight, only the twist (6).
+- Death: hardcore loses the whole bestiary; normal drains your squads' stamina (7).
 
 ## 12. Open questions
 
 1. Exact fight rules (5.2), then balance with headless runs.
 2. Combat type from watching the mob, or only from family and NPC id? (3.5)
-3. What you see of the opponent's squads before picking (6).
-4. Single fight or best of 3 (6).
-5. Cap sizes (6), how long fallen cards sit out and whether survivors rest too (6.3).
-6. Stars: how many copies per star (3.3), after 1.
-7. Penalty on death for normal bestiaries (7).
+3. Single fight or best of 3 (6).
+4. Cap sizes (6); stamina numbers (6.3, 7).
+5. Stars: how many copies per star (3.3), after 1.
 
 ## 13. Mockup
 
