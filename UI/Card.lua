@@ -75,7 +75,8 @@ local function Paper()
 end
 ns.RING, ns.RING_COVER = RING, COVER
 local ROUND_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
-local STAT_COLORS = { attack = { 1, 0.45, 0.4 }, health = { 0.4, 1, 0.45 }, speed = { 1, 0.85, 0.35 } }
+local STAT_COLORS = { attack = { 1, 0.45, 0.4 }, health = { 0.4, 1, 0.45 }, speed = { 1, 0.85, 0.35 },
+	heal = { 0.45, 0.95, 1 } }
 
 local BACKDROP = {
 	bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -377,6 +378,8 @@ function Card.Create(parent)
 		local label = card:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 		label:SetPoint("BOTTOM", text, "TOP", 0, 0)
 		label:SetText(({ attack = "ATK", health = "HP", speed = "SPD" })[stat])
+		card.statLabels = card.statLabels or {}
+		card.statLabels[stat] = label
 		label:SetScale(0.85)
 		if card.paper then
 			label:SetTextColor(unpack(INK))
@@ -493,6 +496,10 @@ function Mixin:SetCard(data, bar)
 		star:SetShown(i <= data.stars)
 	end
 	self.stats.attack:SetText(ns.CardAttack(data)) -- casters and healers: their spell
+	-- Healers show what they heal for, not damage
+	local healer = data.type == "Healer"
+	self.statLabels.attack:SetText(healer and "HEAL" or "ATK")
+	self.stats.attack:SetTextColor(unpack(healer and STAT_COLORS.heal or STAT_COLORS.attack))
 	self.stats.health:SetText(data.health)
 	self.stats.speed:SetText(("%.1f"):format(data.speed)) -- its attack time in seconds
 
@@ -625,13 +632,16 @@ function Card.ShowTooltipFor(owner, data)
 	GameTooltip:AddLine(("Level %d%s  ·  %d of %d stars (+%d%%)"):format(data.level or data.power, progress, data.stars,
 		ns.MAX_STARS, data.stars * ns.STAR_BONUS * 100 + 0.5), 0.8, 0.8, 0.8)
 	GameTooltip:AddLine(" ")
-	GameTooltip:AddDoubleLine("Attack", data.attack, 1, 1, 1, 1, 1, 1)
+	if data.type ~= "Mage" and data.type ~= "Healer" then
+		GameTooltip:AddDoubleLine("Attack", data.attack, 1, 1, 1, 1, 1, 1) -- casters and healers don't attack
+	end
 	if data.spellPower then
 		GameTooltip:AddDoubleLine(data.type == "Healer" and ("Heal: " .. (data.spell or "Heal")) or ("Spell: " .. (data.spell or "Spell")),
 			data.spellPower, 1, 1, 1, 1, 1, 1)
 	end
 	GameTooltip:AddDoubleLine("Health", data.health, 1, 1, 1, 1, 1, 1)
-	GameTooltip:AddDoubleLine("Attack time", ("%.1f s"):format(data.speed), 1, 1, 1, 1, 1, 1)
+	GameTooltip:AddDoubleLine((data.type == "Mage" or data.type == "Healer") and "Cast time" or "Attack time",
+		("%.1f s"):format(data.speed), 1, 1, 1, 1, 1, 1)
 	if data.armor > 0 then
 		GameTooltip:AddDoubleLine("Armor", data.armor, 1, 1, 1, 1, 1, 1)
 	end

@@ -76,7 +76,7 @@ local function Sections()
 	})
 
 	local roles = {
-		Tank = "Blocks: while you have a living Tank, the enemy's attacks and spells have to target a Tank.",
+		Tank = ("Blocks: while you have a living Tank, the enemy's attacks and spells have to target a Tank. %s more health, %s less damage and %s slower attacks than the mob."):format(Pct(ns.TANK_HEALTH - 1), Pct(1 - ns.TANK_DAMAGE), Pct(ns.TANK_SLOW - 1)),
 		Mage = "Only casts: its spell ignores armor and has no cooldown.",
 		Warrior = "Melee damage: its edge is the real mob's hits and attack time.",
 		Healer = ("Only heals: an ally you pick, like a Mage's spell (its cast time, no cooldown); each heal is %s weaker than the one before. With nobody hurt it waits, and gets its turn the moment an ally is hurt."):format(Pct(1 - R.healFade)),

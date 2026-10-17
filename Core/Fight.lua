@@ -145,8 +145,10 @@ local function Units(cards, side, twist)
 			unit.armor = unit.armor * 2
 			haste = haste - SHIELD_WALL_SLOW
 		end
-		unit.interval = math.max(0.5, Tenths((card.attackSpeed or ns.ATTACK_SPEED) * (1 - haste)))
-		unit.next = unit.interval -- its first turn comes after one attack time
+		-- Its turn time: its attack time; casters and healers only cast, so their cast time
+		local base = (unit.kind == "Mage" or unit.kind == "Healer") and unit.castTime or card.attackSpeed or ns.ATTACK_SPEED
+		unit.interval = math.max(0.5, Tenths(base * (1 - haste)))
+		unit.next = unit.interval -- its first turn comes after one turn time
 		units[slot] = unit
 	end
 	return units

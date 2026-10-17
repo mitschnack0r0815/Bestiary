@@ -46,6 +46,12 @@ ns.MAX_NORMAL_LEVEL = 60
 ns.CAP_PER_LEVEL = 5
 ns.STAR_BONUS = 0.03
 
+-- Tanks: more health, less damage (decided 2026-10-17, until something in the game tells tanks
+-- and damage dealers apart better)
+ns.TANK_HEALTH = 1.25
+ns.TANK_DAMAGE = 0.75
+ns.TANK_SLOW = 1.25 -- their attack time, so their turns come 25% less often (hits stay as big)
+
 -- Until a mob type is measured (health from the damage meter, melee and spell hits on you), its
 -- factors against the typical mob of its level and class are guessed by rarity. Guesses.
 ns.GUESSED_FACTORS = {

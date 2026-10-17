@@ -85,6 +85,7 @@ local function ReadArmor()
 end
 
 local guidLevels = {} -- GUID -> level of mobs seen this fight
+local speedSeen = {} -- GUID -> true once its attack speed was counted (this session)
 
 -- The level of that very mob if we saw it, else the last one seen of its type
 local function MobLevel(npcId, guid)
@@ -204,9 +205,21 @@ local function CacheUnit(unit)
 	if class then
 		info.class = class
 	end
+	-- Its attack speed: each mob counted once, the most common reading wins, so a mob we slowed
+	-- or one that's enraged doesn't change it (it's only readable out of combat anyway)
 	local speed = UnitAttackSpeed and Clean((UnitAttackSpeed(unit)))
-	if speed and speed > 0 then
-		info.attackSpeed = speed
+	if speed and speed > 0 and not speedSeen[guid] then
+		speedSeen[guid] = true
+		local tenths = math.floor(speed * 10 + 0.5)
+		info.speeds = info.speeds or {}
+		info.speeds[tenths] = (info.speeds[tenths] or 0) + 1
+		local best, count = nil, 0
+		for value, seen in pairs(info.speeds) do
+			if seen > count or (seen == count and value == 20) then -- ties: the usual 2.0 s
+				best, count = value, seen
+			end
+		end
+		info.attackSpeed = best / 10
 	end
 	if classification then
 		info.classification = ns.CLASSIFICATIONS[classification] or "normal"

@@ -323,7 +323,8 @@ function ns.CardView(card)
 	end
 	local info = card.npcId and BestiaryAccount.mobs[card.npcId]
 	local class = card.class or (info and info.class)
-	local attackSpeed = card.attackSpeed or (info and info.attackSpeed) or ns.ATTACK_SPEED
+	local study = card.npcId and BestiaryChar.study and BestiaryChar.study[card.npcId]
+	local attackSpeed = card.attackSpeed or (info and info.attackSpeed) or (study and study.attackSpeed) or ns.ATTACK_SPEED
 	attackSpeed = math.max(0.5, math.floor(attackSpeed * 10 + 0.5) / 10) -- tenths, like the fight clock
 	local level = ns.CardLevel(card)
 	local healthFactor, meleeFactor, spells = 1, 1, {}
@@ -331,11 +332,18 @@ function ns.CardView(card)
 		healthFactor, meleeFactor, spells = ns.MobFactors(card.npcId, card.classification)
 	end
 	local stars = 1 + ns.STAR_BONUS * (card.stars or 0)
+	local tank = card.type == "Tank"
+	local health, damage = stars * (tank and ns.TANK_HEALTH or 1), stars * (tank and ns.TANK_DAMAGE or 1)
 	view.id = "npc" .. card.npcId
 	view.level = level
 	view.power = level -- what counts against the cap: the sum of levels (decided)
 	view.class = class
-	view.hit = ns.BaseHit(level, class, attackSpeed) * meleeFactor * stars
+	view.hit = ns.BaseHit(level, class, attackSpeed) * meleeFactor * damage
+	if tank and not card.stats then
+		-- slower turns, the hit computed from its real attack time stays (decided); a card from a
+		-- duel already comes with its owner's attack time
+		attackSpeed = math.floor(attackSpeed * ns.TANK_SLOW * 10 + 0.5) / 10
+	end
 	view.attackSpeed = attackSpeed
 	-- Its spell: the signature spell, or for Mages and Healers without one a spell of their own.
 	-- Strength (a factor of the typical 2 s hit, like melee): measured, else its description,
@@ -351,19 +359,20 @@ function ns.CardView(card)
 		if not factor then
 			factor, source = meleeFactor * ns.SPELL_FALLBACK, "guess"
 		end
-		view.spellHit = ns.BaseHit(level, class) * factor * stars
+		view.spellHit = ns.BaseHit(level, class) * factor * damage
 		view.spellSource = source
 		local cast = data and data.cast or ns.SPELL_TIME
 		view.castTime = math.floor(math.max(ns.GCD, cast) * 10 + 0.5) / 10
 	end
-	view.health = math.max(1, math.floor(ns.BaseHealth(level, class) * healthFactor * stars + 0.5))
+	view.health = math.max(1, math.floor(ns.BaseHealth(level, class) * healthFactor * health + 0.5))
 	-- Attack: one melee hit; spell power: one cast. Both at fight pace.
 	view.attack = math.max(1, math.floor(view.hit * ns.PACE + 0.5))
 	if view.spellHit then
 		view.spellPower = math.max(1, math.floor(view.spellHit * ns.PACE + 0.5))
 	end
-	-- Speed: its attack time in seconds (lower is faster): when its turns come
-	view.speed = attackSpeed
+	-- Speed: how long until its next turn, in seconds (lower is faster): its attack time; casters
+	-- and healers only cast, so their cast time
+	view.speed = (card.type == "Mage" or card.type == "Healer") and view.castTime or attackSpeed
 	view.armor = ns.BaseArmor(level, class)
 	view.stamina = card.stamina or 100
 	view.zone = card.zone or ""
@@ -371,6 +380,9 @@ function ns.CardView(card)
 		-- from a duel: its stats came with it (the owner's measurements of that mob)
 		view.health, view.attack, view.armor = card.stats.health, card.stats.attack, card.stats.armor
 		view.spellPower, view.castTime = card.stats.spellPower, card.stats.castTime
+		if (card.type == "Mage" or card.type == "Healer") and view.castTime then
+			view.speed = view.castTime
+		end
 	end
 	return view
 end

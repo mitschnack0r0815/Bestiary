@@ -349,7 +349,8 @@ then its turn comes at once (decided). Tanks and Warriors attack or use their sp
 - **Heal** (Healers instead of a spell): an ally below full health. Works like a Mage's spell
   (decided): its cast time, no cooldown. Each heal 10% weaker than the one before.
 
-**Combat types:** Tank (blocks), Mage (spells without cooldown), **Warrior** (melee damage; was
+**Combat types:** Tank (blocks; **+25% health, -25% damage** (attack and spell), **25% longer attack time**, decided
+2026-10-17 until the game tells tanks apart better), Mage (spells without cooldown), **Warrior** (melee damage; was
 Assassin until 2026-10-17, renamed, decided), Healer. Leaders: Tank allies +20% armor, Mage
 spells +15%, Warrior allies attack 10% faster, heals +20%.
 

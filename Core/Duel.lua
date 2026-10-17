@@ -22,9 +22,9 @@ local _, ns = ...
 local Duel = {}
 ns.Duel = Duel
 
-ns.PROTOCOL = 7 -- 3: turn based, twist bans; 4: virtual clock (attack times on the wire), Warrior;
+ns.PROTOCOL = 8 -- 3: turn based, twist bans; 4: virtual clock (attack times on the wire), Warrior;
 -- 5: cast times on the wire; 6: heals without cooldown; 7: casters only cast, healers only heal,
--- waiting Healers act when an ally gets hurt. Any change to the fight rules needs a new number,
+-- waiting Healers act when an ally gets hurt; 8: casters' turns by their cast time. Any change to the fight rules needs a new number,
 -- or two clients would play different fights.
 local ASK_EVERY = 90 -- seconds between our "where are you?" while we wait on them
 local ASK_GAP = 20 -- at most one per game this often
