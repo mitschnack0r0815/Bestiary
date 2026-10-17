@@ -28,6 +28,10 @@ local INK = { 0.28, 0.18, 0.08 } -- labels on the paper
 -- Forever's unit frame circle (the level badge): a dark disc with a gold rim. The type and family
 -- badges, the level gem and the duel's action circles use it; icons go inside its rim.
 local GOLD_CIRCLE = "UI-HUD-UnitFrame-SmallCircle"
+local GOLD_RING = "Interface\\AddOns\\Bestiary\\Media\\GoldRing" -- Media/GoldRing.tga, 256 px
+local GOLD_RING_INNER = 0.80 -- its hole, as a share of its size (the art fits inside)
+local CARD_BACK = "Interface\\AddOns\\Bestiary\\Media\\CardBack" -- Media/CardBack.tga, 256 x 512
+ns.GOLD_RING, ns.GOLD_RING_INNER = GOLD_RING, GOLD_RING_INNER
 local GOLD_INNER = 0.68 -- the part of the circle inside the rim
 local goldCircle
 function ns.GoldCircle(texture)
@@ -84,6 +88,25 @@ local BACKDROP = {
 	tile = true, tileSize = 16, edgeSize = 14,
 	insets = { left = 4, right = 4, top = 4, bottom = 4 },
 }
+
+-- Softer corners like spell buttons: the action bar's icon mask (falls back to a slight crop)
+local SOFT_MASKS = { "UI-HUD-ActionBar-IconFrame-Mask", "UI-Frame-IconMask" }
+function ns.SoftCorners(frame, texture)
+	texture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+	if not (frame.CreateMaskTexture and C_Texture and C_Texture.GetAtlasInfo) then
+		return
+	end
+	for _, atlas in ipairs(SOFT_MASKS) do
+		if C_Texture.GetAtlasInfo(atlas) then
+			local mask = frame:CreateMaskTexture()
+			mask:SetAtlas(atlas)
+			mask:SetAllPoints(texture)
+			texture:AddMaskTexture(mask)
+			texture:SetTexCoord(0, 1, 0, 1) -- the mask cuts the edge
+			return
+		end
+	end
+end
 
 -- Makes a texture round (falls back to square on clients without mask textures)
 local function Round(frame, texture)
@@ -305,15 +328,14 @@ function Card.Create(parent)
 		card.cover:SetSize(box, box)
 		card.cover:AddMaskTexture(hole)
 		card.paperCover = true
-		local gold = top:CreateTexture(nil, "ARTWORK", nil, 3)
-		if ns.GoldCircle(gold) then
-			gold:SetSize(ART / GOLD_INNER, ART / GOLD_INNER)
-			gold:SetPoint("CENTER", card.art)
-			gold:AddMaskTexture(hole) -- only the rim: its dark middle would hide the portrait
-			card.goldRing = gold
-			card.ring:Hide()
-		end
 	end
+	-- The portrait's gold rim: our own texture, drawn at 256 px so it stays sharp (the game has
+	-- no ring of its own at this size; stretched small circles look pixelated)
+	card.goldRing = top:CreateTexture(nil, "ARTWORK", nil, 3)
+	card.goldRing:SetTexture(GOLD_RING)
+	card.goldRing:SetSize(ART / GOLD_RING_INNER, ART / GOLD_RING_INNER)
+	card.goldRing:SetPoint("CENTER", card.art)
+	card.ring:Hide()
 
 	card.badge = Medallion(top, BADGE, nil, "OVERLAY")
 	card.badge.ring:SetPoint("CENTER", card.art, "BOTTOMLEFT", 2, 3)
@@ -346,18 +368,25 @@ function Card.Create(parent)
 	card.power:SetPoint("CENTER", card.powerRim, "CENTER", 0, 0)
 	card.power:SetTextColor(1, 0.82, 0.2)
 
-	-- Leaders: the dragon ring around the art
+	-- Leaders: the dragon around the art (set by SetLeader, it depends on the rarity)
 	card.dragon = top:CreateTexture(nil, "OVERLAY", nil, 1)
-	card.dragon:SetPoint("CENTER", card.art, "CENTER", 0, 0)
-	SetDragon(card.dragon)
-	if card.dragon.atlas then
-		-- Sized so the dragon's own gold ring sits on the edge of the art
-		card.dragon:SetSize(ART * DRAGON_SIZE, ART * DRAGON_SIZE)
-	else
-		card.dragon:SetSize(ART * 1.8, ART * 1.5)
-		card.dragon:SetPoint("CENTER", card.art, "CENTER", 6, 2)
-	end
 	card.dragon:Hide()
+
+	-- Its abilities: up to 4 icons beside the art, first right (top, below), then left (below the
+	-- copies count)
+	card.abilityIcons = {}
+	for i = 1, 4 do
+		local icon = top:CreateTexture(nil, "OVERLAY", nil, 2)
+		icon:SetSize(16, 16)
+		if i <= 2 then
+			icon:SetPoint("TOPLEFT", card.art, "TOPRIGHT", 3, 2 - (i - 1) * 16) -- touching, no gap
+		else
+			icon:SetPoint("TOPRIGHT", card.art, "TOPLEFT", -2, -16 - (i - 3) * 16)
+		end
+		ns.SoftCorners(top, icon)
+		icon:Hide()
+		card.abilityIcons[i] = icon
+	end
 
 	card.stars = {}
 	for i = 1, 5 do
@@ -416,6 +445,18 @@ function Card.Create(parent)
 	card.tiredText:SetPoint("CENTER", card.art)
 	card.tiredText:SetTextColor(1, 0.4, 0.3)
 
+	-- All copies already in the squad: shaded (not see-through, the paper would look washed out)
+	card.usedShade = top:CreateTexture(nil, "OVERLAY", nil, 5)
+	card.usedShade:SetPoint("TOPLEFT", 4, -4)
+	card.usedShade:SetPoint("BOTTOMRIGHT", -4, 4)
+	card.usedShade:SetColorTexture(0, 0, 0, 0.55)
+	card.usedShade:Hide()
+	card.usedText = top:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	card.usedText:SetPoint("CENTER", card.art, "CENTER", 0, 0)
+	card.usedText:SetText("In squad")
+	card.usedText:SetTextColor(1, 0.82, 0.2)
+	card.usedText:Hide()
+
 	-- Red flash when hit
 	card.flash = top:CreateTexture(nil, "OVERLAY", nil, 6)
 	card.flash:SetPoint("TOPLEFT", 4, -4)
@@ -452,11 +493,49 @@ function Card.Create(parent)
 	fade:SetStartDelay(0.4)
 	fade:SetDuration(0.3)
 
-	card.dead = top:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
-	card.dead:SetPoint("CENTER", card.art)
-	card.dead:SetText("X")
-	card.dead:SetTextColor(0.9, 0.1, 0.1)
-	card.dead:Hide()
+	-- Knocked out: the card lies face down. Its back (Media/CardBack.tga) with the Bestiary emblem
+	-- in a gold ring, above everything on the card (the 3D model too)
+	local back = CreateFrame("Frame", nil, card, BackdropTemplateMixin and "BackdropTemplate" or nil)
+	back:SetAllPoints()
+	back:SetFrameLevel(card:GetFrameLevel() + 10)
+	if back.SetBackdrop then
+		back:SetBackdrop(BACKDROP)
+		back:SetBackdropColor(0, 0, 0, 1)
+		back:SetBackdropBorderColor(0.55, 0.42, 0.2, 1)
+	end
+	local pattern = back:CreateTexture(nil, "ARTWORK", nil, 1)
+	pattern:SetPoint("TOPLEFT", 3, -3)
+	pattern:SetPoint("BOTTOMRIGHT", -3, 3)
+	pattern:SetTexture(CARD_BACK)
+	local emblem = back:CreateTexture(nil, "ARTWORK", nil, 2)
+	emblem:SetSize(34, 34)
+	emblem:SetPoint("CENTER")
+	emblem:SetTexture(ns.ICON or "Interface\\Icons\\Ability_Hunter_BeastTaming")
+	Round(back, emblem)
+	local emblemRing = back:CreateTexture(nil, "ARTWORK", nil, 3)
+	emblemRing:SetSize(34 / GOLD_RING_INNER, 34 / GOLD_RING_INNER)
+	emblemRing:SetPoint("CENTER")
+	emblemRing:SetTexture(GOLD_RING)
+	back:Hide()
+	card.back = back
+
+	-- Turning over: squeezed to a line, then the other face grows back
+	local flip = card:CreateAnimationGroup()
+	local shrink = flip:CreateAnimation("Scale")
+	shrink:SetScaleFrom(1, 1)
+	shrink:SetScaleTo(0.02, 1)
+	shrink:SetDuration(0.14)
+	shrink:SetSmoothing("IN")
+	shrink:SetScript("OnFinished", function()
+		card.back:SetShown(card.isDead == true)
+	end)
+	local grow = flip:CreateAnimation("Scale")
+	grow:SetScaleFrom(0.02, 1)
+	grow:SetScaleTo(1, 1)
+	grow:SetDuration(0.16)
+	grow:SetStartDelay(0.14)
+	grow:SetSmoothing("OUT")
+	card.flip = flip
 
 	card:SetScript("OnEnter", card.ShowTooltip)
 	card:SetScript("OnLeave", GameTooltip_Hide)
@@ -466,7 +545,7 @@ end
 -- bar: "stamina", "health" or nil
 function Mixin:SetCard(data, bar)
 	self.data = data
-	local rarity = ns.RARITIES[data.classification]
+	local rarity = ns.RarityOf(data)
 	local family = ns.FAMILIES[data.family]
 	local kind = ns.TYPES[data.type]
 	local r, g, b = unpack(rarity.color)
@@ -489,11 +568,18 @@ function Mixin:SetCard(data, bar)
 	end
 	self.badge.icon:SetTexture(kind.icon)
 	self.familyBadge.icon:SetTexture(family.icon)
-	self.power:SetText(data.power)
+	self.power:SetText(data.level or data.power) -- the level, like on the unit frames
 	self:SetCount(nil)
 	self:SetUsedUp(false)
 	for i, star in ipairs(self.stars) do
 		star:SetShown(i <= data.stars)
+	end
+	for i, icon in ipairs(self.abilityIcons) do
+		local ability = data.abilities and data.abilities[i]
+		icon:SetShown(ability ~= nil)
+		if ability then
+			icon:SetTexture(select(2, ns.AbilityLook(ability)))
+		end
 	end
 	self.stats.attack:SetText(ns.CardAttack(data)) -- casters and healers: their spell
 	-- Healers show what they heal for, not damage
@@ -520,7 +606,7 @@ function Mixin:SetCard(data, bar)
 		self.tiredText:SetText(("Exhausted\n%d duels"):format(data.exhausted))
 	end
 	self:SetDead(false)
-	self:SetLeader(ns.IsNamed(data)) -- named cards always lead
+	self:SetLeader(ns.IsNamed(data), data.classification) -- named cards always lead
 	self:SetSelected(false)
 end
 
@@ -530,7 +616,8 @@ local SPARK = "Interface\\ItemSocketingFrame\\UI-ItemSockets"
 local SPARK_COORDS = { 0.3984375, 0.4453125, 0.40234375, 0.44921875 }
 local WORMS, SPARKS_PER_WORM = 2, 7
 local LAPS_PER_SECOND = 0.3
-local SPARK_GAP = 5 -- pixels between the sparks of a worm
+local SPARK_GAP = 6 -- pixels between the sparks of a worm
+local SPARK_SCALE = 1.5 -- 50% bigger than the pet buttons' shine (decided: easier to see)
 
 -- A point on the border, distance d clockwise from the top left corner
 local function OnBorder(d, w, h)
@@ -571,9 +658,9 @@ function Mixin:SetActive(active)
 				texture:SetTexture(SPARK)
 				texture:SetTexCoord(unpack(SPARK_COORDS))
 				texture:SetBlendMode("ADD")
-				local size = 16 - lag * 1.6
+				local size = (16 - lag * 1.6) * SPARK_SCALE
 				texture:SetSize(size, size)
-				texture:SetVertexColor(1, 0.85, 0.35, 1 - lag * 0.1)
+				texture:SetVertexColor(1, 0.85, 0.35, 1 - lag * 0.07)
 				shine.sparks[#shine.sparks + 1] = { texture = texture, worm = worm, lag = lag }
 			end
 		end
@@ -594,9 +681,10 @@ function Mixin:SetCount(count)
 	end
 end
 
--- Greyed out (all copies already in the squad), still listed
+-- Shaded with "In squad" (all copies already in the squad), still listed
 function Mixin:SetUsedUp(used)
-	self:SetAlpha(used and 0.4 or 1)
+	self.usedShade:SetShown(used)
+	self.usedText:SetShown(used)
 	self.art:SetDesaturated(used)
 end
 
@@ -604,9 +692,45 @@ function Mixin:SetSelected(selected)
 	self.check:SetShown(selected)
 end
 
-function Mixin:SetLeader(leader)
+-- The dragon frames of this client's target frame (Blizzard_UnitFrame/Camelot/TargetFrameUtils:
+-- bosses gold winged, rares silver winged, elites gold), drawn at their real size around a 58 px
+-- portrait whose top right corner is 26, 19 px inside the frame's; scaled to our art
+local BOSS_FRAMES = {
+	worldboss = { "UI-HUD-UnitFrame-Target-PortraitOn-Boss-Gold-Winged", 11, -4 },
+	rare = { "UI-HUD-UnitFrame-Target-PortraitOn-Boss-Rare-Silver-Winged", 8, -7 },
+	rareelite = { "UI-HUD-UnitFrame-Target-PortraitOn-Boss-Rare-Silver-Winged", 8, -7 },
+	other = { "UI-HUD-UnitFrame-Target-PortraitOn-Boss-Gold", 0, 1 },
+}
+local PORTRAIT, PORTRAIT_X, PORTRAIT_Y = 58, -26, -19
+
+local function SetBossFrame(texture, art, classification)
+	local frame = BOSS_FRAMES[classification] or BOSS_FRAMES.other
+	local info = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(frame[1])
+	if not info or not info.width then
+		return false
+	end
+	local scale = ART / PORTRAIT
+	texture:SetAtlas(frame[1])
+	texture:SetSize(info.width * scale, info.height * scale)
+	texture:ClearAllPoints()
+	texture:SetPoint("TOPRIGHT", art, "TOPRIGHT", (frame[2] - PORTRAIT_X) * scale, (frame[3] - PORTRAIT_Y) * scale)
+	return true
+end
+
+function Mixin:SetLeader(leader, classification)
+	if leader and not SetBossFrame(self.dragon, self.art, classification) then
+		-- older clients: the quest marker dragon, or the one cut from the elite target frame
+		SetDragon(self.dragon)
+		self.dragon:ClearAllPoints()
+		if self.dragon.atlas then
+			self.dragon:SetSize(ART * DRAGON_SIZE, ART * DRAGON_SIZE)
+			self.dragon:SetPoint("CENTER", self.art, "CENTER", 0, 0)
+		else
+			self.dragon:SetSize(ART * 1.8, ART * 1.5)
+			self.dragon:SetPoint("CENTER", self.art, "CENTER", 6, 2)
+		end
+	end
 	self.dragon:SetShown(leader)
-	self.ring:SetShown(not leader and not self.goldRing) -- the dragon is the leader's ring
 end
 
 function Mixin:ShowTooltip()
@@ -616,45 +740,46 @@ function Mixin:ShowTooltip()
 end
 
 -- The card's tooltip for any frame (also the loot window's rows)
+-- Only what the card itself doesn't show (decided): no level, stars, ATK/HEAL, HP or speed
 function Card.ShowTooltipFor(owner, data)
-	local rarity = ns.RARITIES[data.classification]
+	local rarity = ns.RarityOf(data)
 	local kind = ns.TYPES[data.type]
 	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
 	GameTooltip:AddLine(data.name, unpack(rarity.color))
-	GameTooltip:AddLine(("%s  ·  %s"):format(data.family, rarity.name), 1, 1, 1)
-	GameTooltip:AddLine(data.type, unpack(kind.color))
+	-- the badges are only icons: their names
+	GameTooltip:AddLine(("%s  ·  %s  ·  |cff%02x%02x%02x%s|r"):format(rarity.name, data.family,
+		kind.color[1] * 255, kind.color[2] * 255, kind.color[3] * 255, data.type), 1, 1, 1)
+	GameTooltip:AddLine(("Power %d (counts against the squad cap)"):format(data.power), 1, 0.82, 0.2)
 	local saved = not data.remote and not data.player and ns.SavedCard(data)
-	local progress = ""
 	if saved then
-		progress = data.level >= ns.LevelCap(saved) and "  (capped)"
-			or ("  (%d/%d duels to the next)"):format(saved.games or 0, ns.GAMES_PER_LEVEL)
+		GameTooltip:AddLine(data.level >= ns.LevelCap(saved) and "Can't level higher for now"
+			or ("%d of %d duels to the next level"):format(saved.games or 0, ns.GAMES_PER_LEVEL), 0.8, 0.8, 0.8)
 	end
-	GameTooltip:AddLine(("Level %d%s  ·  %d of %d stars (+%d%%)"):format(data.level or data.power, progress, data.stars,
-		ns.MAX_STARS, data.stars * ns.STAR_BONUS * 100 + 0.5), 0.8, 0.8, 0.8)
-	GameTooltip:AddLine(" ")
-	if data.type ~= "Mage" and data.type ~= "Healer" then
-		GameTooltip:AddDoubleLine("Attack", data.attack, 1, 1, 1, 1, 1, 1) -- casters and healers don't attack
+	-- a Tank's or Warrior's spell isn't on the card (casters' and healers' is their ATK/HEAL)
+	if data.spellPower and data.type ~= "Mage" and data.type ~= "Healer" then
+		GameTooltip:AddDoubleLine("Spell: " .. (data.spell or "Spell"), ("%d, %.1f s cast"):format(data.spellPower,
+			data.castTime or ns.SPELL_TIME), 1, 1, 1, 1, 1, 1)
+	elseif data.spell then
+		GameTooltip:AddLine(data.spell, 1, 1, 1)
 	end
-	if data.spellPower then
-		GameTooltip:AddDoubleLine(data.type == "Healer" and ("Heal: " .. (data.spell or "Heal")) or ("Spell: " .. (data.spell or "Spell")),
-			data.spellPower, 1, 1, 1, 1, 1, 1)
-	end
-	GameTooltip:AddDoubleLine("Health", data.health, 1, 1, 1, 1, 1, 1)
-	GameTooltip:AddDoubleLine((data.type == "Mage" or data.type == "Healer") and "Cast time" or "Attack time",
-		("%.1f s"):format(data.speed), 1, 1, 1, 1, 1, 1)
 	if data.armor > 0 then
 		GameTooltip:AddDoubleLine("Armor", data.armor, 1, 1, 1, 1, 1, 1)
 	end
+	for _, ability in ipairs(data.abilities or {}) do
+		local def = ns.ABILITIES[ability.key]
+		local how = def.passive and "" or ability.onSpell and "  |cff999999(with its spell)|r"
+			or ("  |cff999999(every %d s)|r"):format(def.cooldown)
+		local name = ns.AbilityLook(ability)
+		GameTooltip:AddLine(("|cffffd200%s|r%s"):format(name ~= def.name and (def.name .. ": " .. name) or def.name, how), 1, 1, 1)
+		GameTooltip:AddLine("   " .. ns.AbilityText(ability, data), 0.8, 0.8, 0.8, true)
+	end
 	GameTooltip:AddDoubleLine("Stamina", data.stamina .. " / 100", 1, 1, 1, 1, 1, 1)
-	GameTooltip:AddLine(" ")
 	if ns.IsNamed(data) then
+		GameTooltip:AddLine(" ")
 		GameTooltip:AddLine(data.player and (data.remote and (data.remote .. " themselves: always leads, one leader per squad")
 			or "That's you: always leads its squad, one leader per squad")
 			or "Named: always leads its squad, one per squad", 1, 0.82, 0, true)
 		GameTooltip:AddLine(kind.leader, 1, 0.82, 0, true)
-	end
-	if data.spell then
-		GameTooltip:AddLine("Signature: " .. data.spell, 0.8, 0.8, 0.8)
 	end
 	if data.zone ~= "" then
 		GameTooltip:AddLine("Caught in " .. data.zone, 0.6, 0.6, 0.6)
@@ -699,10 +824,19 @@ function Mixin:Heal(amount, hp)
 	self.damageAnim:Play()
 end
 
-function Mixin:SetDead(dead)
-	self:SetAlpha(dead and 0.45 or 1)
-	self.art:SetDesaturated(dead)
-	self.dead:SetShown(dead)
+-- Knocked out: face down. animate: turn it over (in a fight), else at once.
+function Mixin:SetDead(dead, animate)
+	dead = dead == true
+	if self.isDead == dead then
+		return
+	end
+	self.isDead = dead
+	self.flip:Stop()
+	if animate then
+		self.flip:Play() -- the back shows halfway (Create)
+	else
+		self.back:SetShown(dead)
+	end
 end
 
 -- Lunges toward the enemy and back. direction: 1 up, -1 down

@@ -242,7 +242,7 @@ end
 local function Details(npcId, view, result, owned)
 	local info = ns.MobInfo(npcId)
 	local entry = ns.Studied(npcId) or ns.EmptyStudy()
-	local rarity = ns.RARITIES[info.classification] or ns.RARITIES.normal
+	local rarity = ns.MobRarity(npcId, info)
 	local lines = {}
 	local function Add(text)
 		lines[#lines + 1] = text
@@ -295,7 +295,13 @@ local function Details(npcId, view, result, owned)
 	if owned and owned.type ~= kind then
 		Add(("|cff999999Your card stays %s (decided when it dropped; Rebuild card updates it).|r"):format(owned.type))
 	end
-	Add(("|cffffd200Card|r  level %d  ·  %d attack, %d health, attacks every %.1f s, %d armor%s"):format(view.level, view.attack,
+	local abilityNames = {}
+	for _, ability in ipairs(view.abilities or {}) do
+		abilityNames[#abilityNames + 1] = ns.ABILITIES[ability.key].name .. (ability.spell and (" (" .. ability.spell .. ")") or "")
+			.. (ability.onSpell and "*" or "")
+	end
+	Add("|cffffd200Abilities|r  " .. (#abilityNames > 0 and table.concat(abilityNames, ", ") or "none known"))
+	Add(("|cffffd200Card|r  level %d, power %d  ·  %d attack, %d health, attacks every %.1f s, %d armor%s"):format(view.level, view.power, view.attack,
 		view.health, view.speed, view.armor, view.spellPower and (", %s %d (%s, %.1f s cast)"):format(view.spell or "spell",
 			view.spellPower, view.spellSource or "?", view.castTime or 0) or ""))
 	Add(("|cffffd200Owned|r  %s"):format(owned and (owned.stars .. " of " .. ns.MAX_STARS .. " stars") or "no"))
@@ -325,7 +331,7 @@ local function Refresh()
 		local row = rows[i] or Row(i)
 		rows[i] = row
 		row.npcId = mob.npcId
-		local rarity = ns.RARITIES[mob.info.classification] or ns.RARITIES.normal
+		local rarity = ns.MobRarity(mob.npcId, mob.info)
 		row.name:SetText(Colored(rarity.color, mob.info.name or "?"))
 		local owned = BestiaryChar.cards[mob.npcId]
 		if owned then

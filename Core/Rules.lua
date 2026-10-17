@@ -3,14 +3,54 @@ local _, ns = ...
 -- The game's rules shared by everything: rarities, families, combat types, squad limits and
 -- checks, named leaders, twists (ARCHITECTURE.md 3, 5 and 6).
 
+-- Rarity (decided 2026-10-17): the game's item qualities, from what the mob is.
+--   Common     normal mobs (trivial ones too); with 1 star Uncommon, with 4 stars Rare
+--   Uncommon   elites, named normal mobs
+--   Rare       named elites, your own card
+--   Epic       rares and rare elites (silver dragon, decided), dungeon bosses
+--   Legendary  raid bosses and world bosses
+-- It's the card's color and status; strength comes from the mob's stats, drop chances from its
+-- classification. Common cards (not named) can be owned up to 3 times.
 ns.RARITIES = {
-	normal = { name = "Common", factor = 1, color = { 0.62, 0.62, 0.62 } },
-	elite = { name = "Uncommon", factor = 1.6, color = { 0.12, 1, 0 } },
-	rare = { name = "Rare", factor = 1.8, color = { 0, 0.44, 0.87 } },
-	rareelite = { name = "Epic", factor = 2.4, color = { 0.64, 0.21, 0.93 } },
-	worldboss = { name = "Legendary", factor = 3, color = { 1, 0.5, 0 } },
+	common = { name = "Common", color = { 1, 1, 1 }, order = 5 },
+	uncommon = { name = "Uncommon", color = { 0.12, 1, 0 }, order = 4 },
+	rare = { name = "Rare", color = { 0, 0.44, 0.87 }, order = 3 },
+	epic = { name = "Epic", color = { 0.64, 0.21, 0.93 }, order = 2 },
+	legendary = { name = "Legendary", color = { 1, 0.5, 0 }, order = 1 },
 }
-ns.RARITY_ORDER = { worldboss = 1, rareelite = 2, rare = 3, elite = 4, normal = 5 }
+ns.RARITY_KEYS = { "common", "uncommon", "rare", "epic", "legendary" }
+
+-- card: anything with classification, npcId, name, player, dungeon (a boss seen in a 5-man)
+function ns.RarityKey(card)
+	if card.player then
+		return "rare"
+	end
+	local classification = card.classification
+	if classification == "worldboss" then
+		return card.dungeon and "epic" or "legendary"
+	elseif classification == "rareelite" or classification == "rare" then
+		return "epic"
+	end
+	local named = ns.IsKnownNamed(card.npcId, card.name)
+	if classification == "elite" then
+		return named and "rare" or "uncommon"
+	elseif named then
+		return "uncommon"
+	end
+	-- a common card grows with its stars (decided)
+	local stars = card.stars or 0
+	return stars >= 4 and "rare" or stars >= 1 and "uncommon" or "common"
+end
+
+function ns.RarityOf(card)
+	return ns.RARITIES[ns.RarityKey(card)]
+end
+
+-- A mob's rarity, before there's a card of it
+function ns.MobRarity(npcId, info)
+	return ns.RarityOf({ classification = info and info.classification or "normal", npcId = npcId,
+		name = info and info.name, dungeon = info and info.instance == "party" })
+end
 
 ns.FAMILIES = {
 	Beast = { icon = "Interface\\Icons\\Ability_Hunter_Pet_Wolf", color = { 0.75, 0.55, 0.3 } },

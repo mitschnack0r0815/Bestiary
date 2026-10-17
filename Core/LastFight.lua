@@ -211,6 +211,7 @@ events:RegisterEvent("PLAYER_DEAD")
 events:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
 events:RegisterEvent("DAMAGE_METER_COMBAT_SESSION_UPDATED")
 events:RegisterEvent("DAMAGE_METER_CURRENT_SESSION_UPDATED")
+events:RegisterEvent("LOSS_OF_CONTROL_ADDED")
 for event in pairs(CHAT) do
 	events:RegisterEvent(event)
 end
@@ -267,6 +268,14 @@ local function OnEvent(_, event, ...)
 		Log(fight.misc, ("PARTY_KILL attacker %s target %s"):format(Show(attacker), Show(target)))
 	elseif event == "PLAYER_DEAD" then
 		Log(fight.misc, "PLAYER_DEAD")
+	elseif event == "LOSS_OF_CONTROL_ADDED" then
+		-- stuns, fears, silences on us (Abilities.lua learns from these)
+		local unit, index = ...
+		local ok, data = pcall(C_LossOfControl.GetActiveLossOfControlData, Plain(index) or 1)
+		data = ok and type(data) == "table" and data or {}
+		Log(fight.misc, ("LOSS_OF_CONTROL unit %s index %s: locType %s spell %s %s duration %s text %s icon %s -> %s"):format(
+			Show(unit), Show(index), Show(data.locType), Show(data.spellID), Show(SpellName(data.spellID)), Show(data.duration),
+			Show(data.displayText), Show(data.iconTexture), tostring(ns.LossOfControlKey and ns.LossOfControlKey(Plain(data.locType)))))
 	elseif event == "DAMAGE_METER_COMBAT_SESSION_UPDATED" or event == "DAMAGE_METER_CURRENT_SESSION_UPDATED" then
 		fight.meterUpdates = fight.meterUpdates + 1
 	end
@@ -517,6 +526,11 @@ function ns.DumpLastFight()
 			Show(okInfo and spellInfo and spellInfo.maxRange), Show(okSub and subtext or nil)))
 		Add(("    description %s"):format(Show(okText and text or nil)))
 		Add(("    damage read from it: %s"):format(low and ("%d to %d"):format(low, high) or "none"))
+		local effects = {}
+		for key, seconds in pairs(ns.ParseSpellEffects(okText and Plain(text) or nil) or {}) do
+			effects[#effects + 1] = key .. (type(seconds) == "number" and (" " .. seconds .. " s") or "")
+		end
+		Add(("    effects read from it: %s"):format(#effects > 0 and table.concat(effects, ", ") or "none"))
 	end
 	if #ids == 0 then
 		Add("no spells")

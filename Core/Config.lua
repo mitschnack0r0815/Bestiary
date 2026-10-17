@@ -51,6 +51,7 @@ ns.STAR_BONUS = 0.03
 ns.TANK_HEALTH = 1.25
 ns.TANK_DAMAGE = 0.75
 ns.TANK_SLOW = 1.25 -- their attack time, so their turns come 25% less often (hits stay as big)
+ns.TANK_ARMOR = 1.5
 
 -- Until a mob type is measured (health from the damage meter, melee and spell hits on you), its
 -- factors against the typical mob of its level and class are guessed by rarity. Guesses.

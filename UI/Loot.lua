@@ -114,7 +114,7 @@ end
 local function Display(entry)
 	current = entry
 	local view = entry.view
-	local rarity = ns.RARITIES[view.classification] or ns.RARITIES.normal
+	local rarity = ns.RarityOf(view)
 	local r, g, b = unpack(rarity.color)
 	icon:SetTexture(view.art or ns.FAMILIES[view.family].icon)
 	ns.SetPortrait(portrait, icon, view)
@@ -140,7 +140,7 @@ local function Display(entry)
 	name:SetTextColor(r, g, b)
 	local kindInfo = ns.TYPES[view.type]
 	info:SetText(("%s  ·  %s  ·  %s  ·  Level %d"):format(
-		kindInfo and Colored(kindInfo.color, view.type) or view.type, rarity.name, view.family, view.power))
+		kindInfo and Colored(kindInfo.color, view.type) or view.type, rarity.name, view.family, view.level or view.power))
 	shownAt = GetTime()
 	alert:ClearAllPoints()
 	alert:SetPoint("CENTER", UIParent, "CENTER", 0, Y + UIParent:GetHeight() * RAISE)

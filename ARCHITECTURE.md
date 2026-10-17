@@ -83,9 +83,15 @@ power budget (rarity x stars, level didn't matter).
   never more than **3 above your level**, at most **60, named cards 63**. Your own card is always
   your level. Saved on the card (`level`, `games`); cards from before levels take their mob's
   level.
-- **Power = the card's level; the cap = the sum of levels** (decided): `5 x your level`
-  (`ns.CAP_PER_LEVEL`, 300 at 60), at most 7 cards. Each side's squad is checked against its
-  owner's cap.
+- **Power** (what counts against the cap; changed 2026-10-17, the level alone let elites in for
+  the price of normal mobs): **level x strength**, strength = sqrt(health ratio x damage per
+  second ratio) against a typical normal mob of that level (warrior row, 2 s attacks); damage is
+  what its action does (casters and healers: spell or heal per cast). At level 20: normal mobs
+  17-21 (Tanks cheaper), elites ~46, rare elites ~53, bosses ~98. Computed from the card's stats,
+  so it follows measurements, stars and type rules, and cards from a duel get the same power on
+  both sides. The cap stays `5 x your level` (`ns.CAP_PER_LEVEL`, 300 at 60): five normal cards
+  of your level, or two elites. At most 7 cards. Each side's squad is checked against its
+  owner's cap. The card's gem shows its level; power is in the tooltip.
 
 Duels send the cards with their level and stats (protocol 2: owner level, then npcId, stars,
 type, rarity, family, flags, level, health, attack, armor, name), so the other side fights the
@@ -93,13 +99,22 @@ mob as its owner measured it.
 
 ### 3.3 Rarity and drop chance
 
+**Rarity = the game's item qualities (decided 2026-10-17)**, from what the mob is. It's the card's
+color and status; strength comes from the real mob (3.2), drop chances from its classification.
+
 | Mob | Card rarity | Drop chance per kill |
 |---|---|---|
-| Normal | Common | 4% |
+| Normal (trivial ones too) | Common (white); **1 star: Uncommon, 4 stars: Rare** | 4% |
+| Named normal mob | Uncommon | 4% |
 | Elite | Uncommon | 15% |
-| Rare | Rare | 100% on the first kill once studied, then 25% |
+| Named elite (Hogger, Mor'Ladim, ...) | Rare | 15% |
+| Rare (silver dragon, elite or not) | Epic | 100% on the first kill once studied, then 25% |
 | Rare elite | Epic | 100% on the first kill once studied, then 35% |
-| Boss (`worldboss` / skull level) | Legendary | 100% on the first kill once studied, then 25% |
+| Dungeon boss (seen in a 5-man) | Epic | 100% on the first kill once studied, then 25% |
+| Raid or world boss | Legendary | 100% on the first kill once studied, then 25% |
+| Your own card | Rare | - |
+
+Where a boss was seen is saved with the mob (`info.instance`) and travels with its card in duels.
 
 No mob drops anything before the addon has seen its kind fighting for 10 seconds (4.0).
 
@@ -180,9 +195,27 @@ the counters come from how each type fights (5.2), not from a "beats" table:
 
 Every character starts with a card of **themselves**, created on first login with the addon:
 your name, your own 3D model as the portrait, family Humanoid, type from your class (Warrior
-and Paladin Tank, Rogue and Hunter Assassin, Priest and Druid Healer, Mage, Warlock and Shaman
-Mage). It counts as **named**, so it's your first leader, but it's **not strong**: Common
-rarity, 0 stars, it never gains stars. Saved under NPC id 0 (`Core/Squads.lua`).
+and Paladin Tank, Rogue and Hunter Warrior, Priest and Druid Healer, Mage, Warlock and Shaman
+Mage). It counts as **named**, so it's your first leader; Rare rarity, the stats of a common mob
+of your level, 0 stars, it never gains stars. Saved under NPC id 0 (`Core/Squads.lua`).
+
+**4 class abilities (decided 2026-10-17)**, real Classic spells (rank 1 ids, names and icons
+from the game) on our effects (`ns.CLASS_ABILITIES`, `Core/Abilities.lua`):
+
+| Class | Abilities |
+|---|---|
+| Warrior | Hamstring (slow), Disarm, Intimidating Shout (fear), Berserker Rage (enrage) |
+| Paladin | Hammer of Justice (stun), Turn Undead (fear), Consecration (damage over time), Judgement of Justice (silence) |
+| Rogue | Kidney Shot (stun), Kick (silence), Crippling Poison (slow), Deadly Poison (poison) |
+| Hunter | Scatter Shot (stun), Concussive Shot (slow), Serpent Sting (poison), Scare Beast (fear) |
+| Mage | Frostbolt (slow, with its spell), Counterspell (silence), Polymorph (fear: damage breaks it), Frost Nova (root) |
+| Warlock | Fear, Corruption (damage over time), Curse of Exhaustion (slow), Spell Lock (silence) |
+| Shaman | Earth Shock (silence), Frost Shock (slow), Flame Shock (damage over time), Elemental Mastery (enrage) |
+| Priest | Psychic Scream (fear), Shadow Word: Pain (damage over time), Silence, Mind Flay (slow) |
+| Druid | Bash (stun), Hibernate (fear: damage breaks it), Entangling Roots (root), Moonfire (damage over time) |
+
+Casters and healers cast their class's spell (Frostbolt, Shadow Bolt, Lightning Bolt, Lesser
+Heal, Healing Touch). Abilities travel with their spell ids in duels (protocol 12).
 
 ## 4. Getting cards
 
@@ -253,7 +286,11 @@ don't depend on who measured), last 25 samples, the median counts:
 - **Health:** mob health is always secret on this client (`UnitHealthMax` for anything not
   player-controlled). Taken from the damage meter instead: damage it took to die (EnemyDamageTaken)
   minus our overkill. Only when we're alone, it was the only mob of its type fighting us, the
-  only kill of the fight and nobody else's tapped mob died, else the numbers mix.
+  only kill of the fight, nobody else's tapped mob died and none of our mobs went after a player
+  outside our group (a passerby's damage isn't in our meter), else the numbers mix.
+- **Whose cast:** resists, spell hits and loss of control go to the mob that just finished a
+  cast, and only mobs fighting us count (on our threat list, or targeting us or our pet), so a
+  mob nearby casting at someone else never gets them.
 - **Melee hit:** plain physical hits on us (`UNIT_COMBAT`, no crit, crushing, glancing, block),
   credited to the one mob targeting us, with **our armor taken back out**: raw = hit / (1 -
   armor / (armor + 400 + 85 x mob level)) (Classic formula, 75% cap, other constant from level
@@ -349,15 +386,42 @@ then its turn comes at once (decided). Tanks and Warriors attack or use their sp
 - **Heal** (Healers instead of a spell): an ally below full health. Works like a Mage's spell
   (decided): its cast time, no cooldown. Each heal 10% weaker than the one before.
 
-**Combat types:** Tank (blocks; **+25% health, -25% damage** (attack and spell), **25% longer attack time**, decided
+**Combat types:** Tank (blocks; **+25% health, +50% armor, -25% damage** (attack and spell), **25% longer attack
+time**, decided
 2026-10-17 until the game tells tanks apart better), Mage (spells without cooldown), **Warrior** (melee damage; was
 Assassin until 2026-10-17, renamed, decided), Healer. Leaders: Tank allies +20% armor, Mage
 spells +15%, Warrior allies attack 10% faster, heals +20%.
 
+**Abilities (decided 2026-10-17, `Core/Abilities.lua`).** Mobs pass their stuns, fears,
+silences, disarms/roots, slows, poisons and enrages on to their cards, **at most 4 per card**
+(the strongest). Learned from: the **loss of control alert** on us (`C_LossOfControl`, readable
+in combat for the player; credited to the mob that just cast, else the one attacking us), the
+**descriptions** of the mob's known spells (Frostbolt: "reduces movement speed"), mob **emotes**
+(enrage) and **poisons** it left on us. Saved per mob account wide (`info.abilities`, spell
+descriptions' effects in `info.spellData`). Hooks in the fight:
+- **Stun:** the target's next turn comes X s later (the real duration).
+- **Fear:** the same, but any damage breaks it (back to its old turn).
+- **Silence:** no spells or heals for X s. **Disarm/root:** no attacks for X s.
+- **Slow:** the target's turns come 30% later for X s.
+- **Poison:** a tick at each of the target's turns for X s (30% of the poisoner's attack).
+- **Enrage** (passive): below 30% health, 50% more damage.
+An ability that's part of the card's signature spell comes with every cast of it; the others are
+their own action (a circle with the ability's icon, 1.5 s, cooldown 15-20 s). A card that can't
+do anything (silenced caster, disarmed fighter) waits a moment. Abilities raise power: stun +15%,
+fear and silence +10%, poison and enrage +8%, slow and disarm +5%. Flee: left out (decided).
+Duels send them with the cards (protocol 11). The fight dump logs loss of control and the
+effects read from spell descriptions. Test cards (Test tab, "Fill with 5 basic cards") and the
+sparring partner's training cards have no mob to learn from: they get a set by type (Tank: stun
+and disarm; Mage: slow with its spell and silence; Warrior: poison and enrage; Healer: fear).
+
 **On screen (decided):** on your turn, every card your card can act on gets round icon buttons
 underneath, one per possible action (attack, spell; heal under allies that can be healed), no
 text (the tooltip shows the damage or heal). The card whose turn it is has sparks wandering
-around its border, like the autocast shine on pet buttons.
+around its border, like the autocast shine on pet buttons. The board's cards are 18% bigger
+(window 860 x 760). Status effects on a card (stun, fear, silence, disarm, slow, poison) show
+above it as icons with the seconds left. A knocked out card turns over and lies face down
+(Media/CardBack.tga: gold border, lattice, the Bestiary emblem in a gold ring); an Undead that
+gets back up turns face up again.
 
 **Tanks block (decided):** while a side has a living Tank, attacks and spells against it must
 target one of its Tanks. **The order in a squad doesn't matter

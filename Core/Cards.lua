@@ -176,7 +176,7 @@ end
 
 function ns.CardLevel(card)
 	if card.player then
-		return UnitLevel("player") or 1
+		return (card.remote and card.level) or UnitLevel("player") or 1 -- theirs from a duel
 	end
 	if not card.level and card.npcId and not card.remote then
 		card.level = ns.DropLevel(card.npcId, card.classification) -- cards from before levels
@@ -263,12 +263,13 @@ local function ReadSpell(data)
 			data.cast = cast / 1000
 		end
 	end
-	if data.low == nil and C_Spell.GetSpellDescription then
+	if (data.low == nil or data.effects == nil) and C_Spell.GetSpellDescription then
 		local ok, text = pcall(C_Spell.GetSpellDescription, data.id)
 		text = ok and ns.Clean(text)
 		if type(text) == "string" and text ~= "" then
 			local low, high = ns.ParseSpellDamage(text)
 			data.low, data.high = low or false, high
+			data.effects = ns.ParseSpellEffects and ns.ParseSpellEffects(text) or false -- stun, slow, ... (Abilities.lua)
 		elseif C_Spell.RequestLoadSpellData then
 			pcall(C_Spell.RequestLoadSpellData, data.id) -- not loaded yet: read again next time
 		end
@@ -303,10 +304,28 @@ function ns.SpellData(npcId, name)
 			data = info.spellData[name]
 		end
 	end
-	if data and (data.cast == nil or data.low == nil) then
+	if data and (data.cast == nil or data.low == nil or data.effects == nil) then
 		ReadSpell(data)
 	end
 	return data
+end
+
+-- Power: what a card counts against the squad cap (decided 2026-10-17). Its level times how
+-- strong it is against a typical normal mob of that level (warrior row, 2 s attacks):
+-- sqrt(health ratio x damage per second ratio), damage being what its action does (casters and
+-- healers: their spell or heal per cast). A normal mob's card is about its level, an elite's
+-- about twice that and more. From the card's stats, so cards from a duel get the same power on
+-- both sides.
+function ns.CardPower(view)
+	local level = view.level or 1
+	local health = ns.BaseHealth(level, "WARRIOR")
+	local dps = ns.BaseHit(level, "WARRIOR") * ns.PACE / ns.ATTACK_SPEED
+	local perSecond = ns.CardAttack(view) / math.max(0.5, view.speed or ns.ATTACK_SPEED)
+	local strength = math.sqrt((view.health / health) * (perSecond / dps))
+	for _, ability in ipairs(view.abilities or {}) do
+		strength = strength * (1 + ns.ABILITIES[ability.key].power) -- abilities cost power (decided)
+	end
+	return math.max(1, math.floor(level * strength + 0.5))
 end
 
 -- A card with its stats (3.2 and 5.2): the real mob at the card's level. Health and melee hits
@@ -335,8 +354,8 @@ function ns.CardView(card)
 	local tank = card.type == "Tank"
 	local health, damage = stars * (tank and ns.TANK_HEALTH or 1), stars * (tank and ns.TANK_DAMAGE or 1)
 	view.id = "npc" .. card.npcId
+	view.dungeon = card.dungeon or (info and info.instance == "party") or nil -- a 5-man boss: Epic
 	view.level = level
-	view.power = level -- what counts against the cap: the sum of levels (decided)
 	view.class = class
 	view.hit = ns.BaseHit(level, class, attackSpeed) * meleeFactor * damage
 	if tank and not card.stats then
@@ -373,7 +392,7 @@ function ns.CardView(card)
 	-- Speed: how long until its next turn, in seconds (lower is faster): its attack time; casters
 	-- and healers only cast, so their cast time
 	view.speed = (card.type == "Mage" or card.type == "Healer") and view.castTime or attackSpeed
-	view.armor = ns.BaseArmor(level, class)
+	view.armor = math.floor(ns.BaseArmor(level, class) * (tank and ns.TANK_ARMOR or 1) + 0.5)
 	view.stamina = card.stamina or 100
 	view.zone = card.zone or ""
 	if card.stats then
@@ -384,6 +403,17 @@ function ns.CardView(card)
 			view.speed = view.castTime
 		end
 	end
+	-- Its abilities (Abilities.lua): a card from a duel brings its own
+	if card.stats then
+		view.abilities = card.abilities or {}
+	elseif card.player then
+		view.abilities = ns.ClassAbilities(card.class) -- 4 of your class's spells
+	elseif card.test or card.remote == "training" then
+		view.abilities = ns.TestAbilities(card.type) -- no mob to learn from (Abilities.lua)
+	else
+		view.abilities = ns.MobAbilities(card.npcId, card.spell)
+	end
+	view.power = ns.CardPower(view)
 	return view
 end
 
@@ -419,7 +449,7 @@ function ns.DropChance(npcId, classification)
 	end
 	local owned = BestiaryChar.cards[npcId]
 	if ns.FIRST_DROP_SURE[classification] and not owned then
-		return 1, "first card of a " .. ns.RARITIES[classification].name:lower() .. " mob"
+		return 1, "first card of a " .. ns.MobRarity(npcId, ns.MobInfo(npcId)).name:lower() .. " mob"
 	end
 	local chance = (ns.DROP_CHANCE[classification] or ns.DROP_CHANCE.normal) * GroupFactor()
 	local now, recent = time(), 0
@@ -762,7 +792,7 @@ function ns.SortCards(list, key)
 				return va > vb
 			end
 		end
-		local ra, rb = ns.RARITY_ORDER[a.classification], ns.RARITY_ORDER[b.classification]
+		local ra, rb = ns.RarityOf(a).order, ns.RarityOf(b).order
 		if ra ~= rb then
 			return ra < rb
 		end
@@ -780,26 +810,46 @@ function ns.Collection()
 	return ns.SortCards(list)
 end
 
--- A button that cycles through the sorts (left click: next, right click: back)
-function ns.SortButton(parent, width)
+-- The sort, as a dropdown like the game's own (its menu system); onChange runs after a pick.
+-- Clients without that template get a button that cycles through the sorts instead.
+local function SetSort(key, onChange)
+	BestiaryChar.sort = key
+	if ns.Refresh then
+		ns.Refresh()
+	end
+	if onChange then
+		onChange()
+	end
+end
+
+function ns.SortButton(parent, width, onChange)
+	local hasDropdown = C_XMLUtil and C_XMLUtil.GetTemplateInfo and C_XMLUtil.GetTemplateInfo("WowStyle1DropdownTemplate")
+	if hasDropdown then
+		local dropdown = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
+		dropdown:SetWidth(width or 110)
+		dropdown:SetupMenu(function(_, root)
+			for _, sort in ipairs(ns.SORTS) do
+				root:CreateRadio(sort.name, function()
+					return ns.SortKey() == sort.key
+				end, function()
+					SetSort(sort.key, onChange)
+				end)
+			end
+		end)
+		function dropdown:Update()
+			self:GenerateMenu() -- shows the current sort
+		end
+		return dropdown
+	end
 	local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
 	button:SetSize(width or 110, 20)
 	button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	button:SetScript("OnClick", function(_, mouse)
 		ns.NextSort(mouse == "RightButton" and -1 or 1)
-		PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-	end)
-	button:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_TOP")
-		GameTooltip:AddLine("Sort the cards")
-		for _, sort in ipairs(ns.SORTS) do
-			local on = sort.key == ns.SortKey()
-			GameTooltip:AddLine((on and "> " or "   ") .. sort.name, on and 1 or 0.7, on and 0.82 or 0.7, on and 0 or 0.7)
+		if onChange then
+			onChange()
 		end
-		GameTooltip:AddLine("Left click: next  ·  Right click: back", 0.6, 0.6, 0.6)
-		GameTooltip:Show()
 	end)
-	button:SetScript("OnLeave", GameTooltip_Hide)
 	function button:Update()
 		self:SetText("Sort: " .. (ns.SortName() or "?"))
 	end

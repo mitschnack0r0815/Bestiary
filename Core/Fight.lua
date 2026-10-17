@@ -30,6 +30,10 @@ local TANK_LEADER = 1.2 -- a Tank leader: Tank allies +20% armor
 local MAGE_LEADER = 1.15 -- a Mage leader: Mage allies +15% spell damage
 local WARRIOR_LEADER = 0.1 -- a Warrior leader: Warrior allies attack 10% faster
 local SHIELD_WALL_SLOW = 0.1 -- Shield Wall twist: everyone attacks 10% slower
+-- Abilities (Abilities.lua): the hooks for their effects
+local GCD = 1.5 -- an ability takes this long (no cast)
+local SLOWED = 1.3 -- a slowed card's turns come 30% later
+local ENRAGE_BELOW, ENRAGE_DAMAGE = 0.3, 1.5 -- enraged below 30% health: 50% more damage
 -- For the Info tab
 ns.FIGHT_RULES = {
 	maxTime = MAX_TIME, opening = OPENING, spellCooldown = SPELL_COOLDOWN,
@@ -114,6 +118,7 @@ local function Units(cards, side, twist)
 			castTime = card.castTime or ns.SPELL_TIME,
 			armor = card.armor, level = card.level or card.power or 1,
 			kind = card.type, leader = leader ~= nil and card == leader, readyAt = 0, heals = 0,
+			abilities = card.abilities or {}, abilityReady = {}, -- ability key -> time it's ready again
 		}
 		local haste = 0
 		if leader then
@@ -226,6 +231,8 @@ local function Wake(state, side)
 end
 
 -- The next turn: the clock jumps to the card whose time comes first
+local Die
+
 local function Advance(state)
 	local unit = Fight.Upcoming(state)[1]
 	if not unit then
@@ -238,6 +245,29 @@ local function Advance(state)
 	end
 	state.time = unit.next
 	state.actor = unit
+	unit.feared = nil -- its fear is over: it's its turn
+	if unit.poison then
+		-- Poison: a tick at each of its turns while it lasts; it can kill
+		if state.time > unit.poison.untilTime then
+			unit.poison = nil
+		else
+			local damage = math.min(unit.hp, unit.poison.damage)
+			unit.hp = unit.hp - damage
+			Event(state, { kind = "tick", side = unit.side, slot = unit.slot, damage = damage, hp = unit.hp })
+			Wake(state, unit.side)
+			if unit.hp <= 0 then
+				Die(state, unit)
+				if not Alive(state.sides[1]) or not Alive(state.sides[2]) then
+					End(state, Alive(state.sides[1]) and 1 or 2)
+					return
+				end
+				if unit.hp <= 0 then
+					state.actor = nil
+					return Advance(state) -- it died before acting: the next one
+				end
+			end
+		end
+	end
 	if unit.drain then
 		-- Demon bonus: costs health every turn, but never kills
 		local loss = math.min(unit.hp - 1, math.max(1, Round(unit.maxHp * unit.drain)))
@@ -272,28 +302,54 @@ function Fight.Actions(state, unit)
 	if not unit then
 		return list
 	end
+	local enraged = Fight.Has(unit, "enrage") and unit.hp < unit.maxHp * ENRAGE_BELOW and ENRAGE_DAMAGE or 1
+	local silenced = (unit.silencedUntil or 0) > state.time
 	-- Casters only cast, healers only heal (decided)
 	if unit.kind ~= "Mage" and unit.kind ~= "Healer" then
-		local attack = unit.attack
+		local attack = unit.attack * enraged
 		if unit.kind == "Warrior" and state.twist == "fog" and Opening(state) then
 			attack = attack * FOG
 		end
-		list[#list + 1] = { key = "attack", name = "Attack", amount = Round(attack), ready = true }
+		list[#list + 1] = { key = "attack", name = "Attack", amount = Round(attack),
+			ready = (unit.disarmedUntil or 0) <= state.time }
 	end
 	local wait = math.max(0, Tenths(unit.readyAt - state.time))
 	if unit.kind == "Healer" then
 		local amount = Round((unit.spell or unit.attack) * (unit.healBonus or 1) * HEAL_FADE ^ unit.heals)
 		local canHeal = #Fight.Targets(state, unit, "heal") > 0
-		list[#list + 1] = { key = "heal", name = unit.spellName or "Heal", amount = math.max(1, amount), ready = canHeal }
-		if not canHeal then
-			-- nobody hurt: its turn passes
-			list[#list + 1] = { key = "wait", name = "Wait", amount = 0, ready = true }
-		end
+		list[#list + 1] = { key = "heal", name = unit.spellName or "Heal", amount = math.max(1, amount),
+			ready = canHeal and not silenced }
 	elseif unit.spell then
-		list[#list + 1] = { key = "spell", name = unit.spellName or "Spell", amount = unit.spell, magic = true,
-			ready = wait == 0, cooldown = wait }
+		list[#list + 1] = { key = "spell", name = unit.spellName or "Spell", amount = Round(unit.spell * enraged), magic = true,
+			ready = wait == 0 and not silenced, cooldown = wait }
+	end
+	-- Its abilities that are actions of their own (not part of its spell, not passive)
+	for _, ability in ipairs(unit.abilities) do
+		local def = ns.ABILITIES[ability.key]
+		if def and not def.passive and not ability.onSpell then
+			local ready = Tenths(math.max(0, (unit.abilityReady[ability.key] or 0) - state.time))
+			list[#list + 1] = { key = "ability:" .. ability.key, name = ability.spell or def.name, amount = 0,
+				ability = ability, ready = ready == 0, cooldown = ready }
+		end
+	end
+	-- Nothing it can do (nobody to heal, silenced, disarmed): its turn passes
+	local any = false
+	for _, action in ipairs(list) do
+		any = any or action.ready
+	end
+	if not any then
+		list[#list + 1] = { key = "wait", name = "Wait", amount = 0, ready = true }
 	end
 	return list
+end
+
+-- Whether a card has an ability (by key)
+function Fight.Has(unit, key)
+	for _, ability in ipairs(unit.abilities or {}) do
+		if ability.key == key then
+			return ability
+		end
+	end
 end
 
 function Fight.Action(state, key, unit)
@@ -360,8 +416,8 @@ function Fight.Estimate(state, unit, key, target)
 	if not action then
 		return 0
 	end
-	if key == "wait" then
-		return 0
+	if key == "wait" or action.ability then
+		return 0 -- abilities do their effect, no damage
 	elseif key == "heal" then
 		return math.min(action.amount, target.maxHp - target.hp)
 	end
@@ -375,13 +431,47 @@ function Fight.Estimate(state, unit, key, target)
 	return math.min(damage, target.hp)
 end
 
-local function Die(state, target)
+function Die(state, target)
 	Event(state, { kind = "death", side = target.side, slot = target.slot })
 	if target.rise and not state.risen[target.side] then
 		state.risen[target.side] = true
 		target.hp = math.max(1, Round(target.maxHp * target.rise))
 		Event(state, { kind = "rise", side = target.side, slot = target.slot, hp = target.hp })
 	end
+end
+
+-- An ability's effect on its target: the hooks (decided). Durations are the mob's real ones.
+local function Effect(state, unit, target, ability)
+	local key = ability.key
+	local seconds = ability.duration or (ns.ABILITIES[key] and ns.ABILITIES[key].duration) or 3
+	if target.hp <= 0 then
+		return
+	end
+	if key == "stun" then
+		target.next = Tenths(target.next + seconds) -- its next turn comes later
+		target.stunnedUntil = Tenths(state.time + seconds) -- for showing it
+	elseif key == "fear" then
+		if not target.feared then
+			target.fearedFrom = target.next -- damage breaks it: back to this
+		end
+		target.feared = true
+		target.next = Tenths(target.next + seconds)
+	elseif key == "silence" then
+		target.silencedUntil = Tenths(state.time + seconds) -- no spells or heals
+	elseif key == "disarm" then
+		target.disarmedUntil = Tenths(state.time + seconds) -- no attacks
+	elseif key == "slow" then
+		if (target.slowedUntil or 0) <= state.time then
+			target.next = Tenths(state.time + (target.next - state.time) * SLOWED)
+		end
+		target.slowedUntil = Tenths(state.time + seconds) -- its turns come later while it lasts
+	elseif key == "poison" then
+		target.poison = { untilTime = Tenths(state.time + seconds), damage = math.max(1, Round(unit.attack * ns.ABILITIES.poison.share)) }
+	else
+		return
+	end
+	Event(state, { kind = "effect", effect = key, side = unit.side, slot = unit.slot, targetSide = target.side,
+		targetSlot = target.slot, seconds = seconds })
 end
 
 -- Plays a move of the card whose turn it is. Returns false if it isn't legal.
@@ -393,8 +483,12 @@ function Fight.Apply(state, move)
 	local target = state.sides[move.side][move.slot]
 	local amount = Fight.Estimate(state, unit, move.action, target)
 	state.moves = state.moves + 1
+	local action = Fight.Action(state, move.action, unit)
 	if move.action == "wait" then
 		Event(state, { kind = "wait", side = unit.side, slot = unit.slot })
+	elseif action.ability then
+		Effect(state, unit, target, action.ability)
+		unit.abilityReady[action.ability.key] = Tenths(state.time + (ns.ABILITIES[action.ability.key].cooldown or 15))
 	elseif move.action == "heal" then
 		target.hp = target.hp + amount
 		unit.heals = unit.heals + 1
@@ -405,21 +499,42 @@ function Fight.Apply(state, move)
 		Event(state, { kind = "hit", side = unit.side, slot = unit.slot, targetSide = target.side,
 			targetSlot = target.slot, damage = amount, hp = target.hp, action = move.action,
 			magic = move.action == "spell" })
+		if target.feared and amount > 0 then
+			-- damage breaks fear
+			target.feared = nil
+			target.next = math.max(state.time, target.fearedFrom or target.next)
+			Event(state, { kind = "unfeared", side = target.side, slot = target.slot })
+		end
 		if target.hp <= 0 then
 			target.hp = 0
 			Die(state, target)
+		elseif move.action == "spell" then
+			-- effects that come with its spell (Frostbolt's slow)
+			for _, ability in ipairs(unit.abilities) do
+				if ability.onSpell and not ns.ABILITIES[ability.key].passive then
+					Effect(state, unit, target, ability)
+				end
+			end
 		end
 		Wake(state, target.side)
 	end
-	-- Its next turn: after its attack time, or after the cast of a spell or heal; a waiting Healer
-	-- is off the clock (past the end) until an ally gets hurt
+	-- Its next turn: after its attack time, the cast of a spell or heal, or an ability's moment;
+	-- slowed: 30% later. A Healer with nobody to heal is off the clock (past the end) until an
+	-- ally gets hurt; any other card that can't act waits a moment.
+	local slow = (unit.slowedUntil or 0) > state.time and SLOWED or 1
 	if move.action == "wait" then
-		unit.waiting = true
-		unit.next = MAX_TIME + 1
+		if unit.kind == "Healer" and #Fight.Targets(state, unit, "heal") == 0 then
+			unit.waiting = true
+			unit.next = MAX_TIME + 1
+		else
+			unit.next = Tenths(state.time + GCD * slow)
+		end
+	elseif action.ability then
+		unit.next = Tenths(state.time + GCD * slow)
 	elseif move.action == "attack" then
-		unit.next = Tenths(state.time + unit.interval)
+		unit.next = Tenths(state.time + unit.interval * slow)
 	else
-		unit.next = Tenths(state.time + unit.castTime)
+		unit.next = Tenths(state.time + unit.castTime * slow)
 		-- A Mage's spells and a Healer's heals are what they do: no cooldown (decided). Other
 		-- cards' spells have one.
 		if unit.kind ~= "Mage" and unit.kind ~= "Healer" then
@@ -440,16 +555,30 @@ end
 local ACTION_CODE = { attack = "a", spell = "s", heal = "h", wait = "w" }
 local ACTION_OF = { a = "attack", s = "spell", h = "heal", w = "wait" }
 
+-- abilities: their code in capitals ("S2.3": stun the card in slot 3 of side 2)
 function Fight.Encode(move)
-	return ("%s%d.%d"):format(ACTION_CODE[move.action] or "a", move.side, move.slot)
+	local code = ACTION_CODE[move.action]
+	local ability = move.action:match("^ability:(.+)$")
+	if ability and ns.ABILITIES[ability] then
+		code = ns.ABILITIES[ability].code:upper()
+	end
+	return ("%s%d.%d"):format(code or "a", move.side, move.slot)
 end
 
 function Fight.Decode(text)
 	local code, side, slot = (text or ""):match("^(%a)(%d)%.(%d+)$")
-	if not code or not ACTION_OF[code] then
+	if not code then
 		return nil
 	end
-	return { action = ACTION_OF[code], side = tonumber(side), slot = tonumber(slot) }
+	local action = ACTION_OF[code]
+	if not action and code:upper() == code then
+		local key = ns.ABILITY_BY_CODE[code:lower()]
+		action = key and ("ability:" .. key)
+	end
+	if not action then
+		return nil
+	end
+	return { action = action, side = tonumber(side), slot = tonumber(slot) }
 end
 
 -- A fight from its start and moves (as encoded); stops at the first move that isn't legal
@@ -463,15 +592,34 @@ function Fight.Replay(cardsA, cardsB, seed, twist, moves)
 	return state
 end
 
+-- Whether an ability's effect is already on a target (no point casting it again)
+local function Affected(state, target, key)
+	if key == "silence" then
+		return (target.silencedUntil or 0) > state.time
+	elseif key == "disarm" then
+		return (target.disarmedUntil or 0) > state.time
+	elseif key == "slow" then
+		return (target.slowedUntil or 0) > state.time
+	elseif key == "poison" then
+		return target.poison ~= nil and target.poison.untilTime > state.time
+	elseif key == "fear" then
+		return target.feared == true
+	end
+	return false
+end
+
 -- The sparring partner's move (simple, decided): a Healer heals the ally with the lowest health
--- share (or waits); the others take the strongest ready action at a target it can kill (the
--- most dangerous one), else at the weakest target
+-- share (or waits); the others use a ready ability where it hurts most (silence casters and
+-- healers, disarm hitters, poison the toughest, stun or fear the most dangerous), else the
+-- strongest action at a target it can kill (the most dangerous one), else at the weakest
 function Fight.AI(state)
 	local unit = state.actor
 	if not unit then
 		return
 	end
-	if unit.kind == "Healer" then
+	local actions = Fight.Actions(state, unit)
+	local heal = Fight.Action(state, "heal", unit)
+	if heal and heal.ready then
 		local best
 		for _, ally in ipairs(Fight.Targets(state, unit, "heal")) do
 			if not best or ally.hp / ally.maxHp < best.hp / best.maxHp then
@@ -481,11 +629,35 @@ function Fight.AI(state)
 		if best then
 			return { action = "heal", side = best.side, slot = best.slot }
 		end
-		return { action = "wait", side = unit.side, slot = unit.slot }
+	end
+	for _, action in ipairs(actions) do
+		if action.ability and action.ready then
+			local key, best, bestValue = action.ability.key, nil, 0
+			for _, target in ipairs(Fight.Targets(state, unit, action.key)) do
+				if not Affected(state, target, key) then
+					local caster = target.kind == "Mage" or target.kind == "Healer"
+					local danger = math.max(target.attack or 0, target.spell or 0)
+					local value = danger
+					if key == "silence" then
+						value = caster and danger or 0
+					elseif key == "disarm" then
+						value = caster and 0 or danger
+					elseif key == "poison" then
+						value = target.hp
+					end
+					if value > bestValue then
+						best, bestValue = target, value
+					end
+				end
+			end
+			if best then
+				return { action = action.key, side = best.side, slot = best.slot }
+			end
+		end
 	end
 	local choice, score
-	for _, action in ipairs(Fight.Actions(state, unit)) do
-		if action.ready and action.key ~= "heal" then
+	for _, action in ipairs(actions) do
+		if action.ready and (action.key == "attack" or action.key == "spell") then
 			for _, target in ipairs(Fight.Targets(state, unit, action.key)) do
 				local damage = Fight.Estimate(state, unit, action.key, target)
 				local value = damage
@@ -500,5 +672,15 @@ function Fight.AI(state)
 			end
 		end
 	end
-	return choice
+	if choice then
+		return choice
+	end
+	-- nothing good: whatever it still can do (waiting is only allowed when nothing is left)
+	for _, action in ipairs(actions) do
+		local target = action.ready and Fight.Targets(state, unit, action.key)[1]
+		if target then
+			return { action = action.key, side = target.side, slot = target.slot }
+		end
+	end
+	return { action = "wait", side = unit.side, slot = unit.slot }
 end

@@ -5,7 +5,7 @@ local Card = ns.Card
 --   Squads: your three squads of up to 7 real cards, checks, and your
 --           collection below
 -- Other pages add themselves with ns.AddPage.
-local WIDTH, HEIGHT = 720, 690
+local WIDTH, HEIGHT = 860, 760 -- room for a bigger duel board
 local STEP = Card.WIDTH + 8 -- the collection grid
 local ROW_STEP = ns.MAX_SQUAD > 7 and Card.WIDTH + 1 or Card.WIDTH + 8 -- squad rows fit the window
 local ROW_X = (WIDTH - (ns.MAX_SQUAD * ROW_STEP - 1)) / 2
@@ -17,7 +17,7 @@ end
 local window = CreateFrame("Frame", "BestiaryFrame", UIParent,
 	TemplateExists("PortraitFrameTemplate") and "PortraitFrameTemplate" or "BasicFrameTemplateWithInset")
 window:SetSize(WIDTH, HEIGHT)
-window:SetPoint("TOP", UIParent, "TOP", 0, -80)
+window:SetPoint("TOP", UIParent, "TOP", 0, -50)
 window:SetFrameStrata("HIGH")
 window:SetToplevel(true)
 window:SetClampedToScreen(true)
@@ -147,7 +147,7 @@ ns.WINDOW_WIDTH, ns.WINDOW_HEIGHT = WIDTH, HEIGHT
 
 local squadsPage = AddPage("Squads", "Interface\\Icons\\INV_Misc_Book_09", 3)
 local current = 1 -- selected squad
-local filter -- combat type shown in the collection, "Named" for named cards (leaders), nil for all
+local filter -- combat type shown in the collection, "Leader" for named cards (leaders), nil for all
 local Refresh
 
 local squadButtons = {}
@@ -220,14 +220,13 @@ checkText:SetSpacing(4)
 local collectionLabel = squadsPage:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 collectionLabel:SetPoint("TOPLEFT", ROW_X, -356)
 
-local sortButton = ns.SortButton(squadsPage, 100)
-sortButton:SetPoint("LEFT", collectionLabel, "RIGHT", 10, 0)
-sortButton:HookScript("OnClick", function()
+local sortButton = ns.SortButton(squadsPage, 110, function()
 	Refresh() -- this page isn't in ns.Refresh's chain
 end)
+sortButton:SetPoint("LEFT", collectionLabel, "RIGHT", 10, 0)
 
 local filterButtons = {}
-local FILTERS = { "All", "Tank", "Mage", "Warrior", "Named" }
+local FILTERS = { "All", "Tank", "Mage", "Warrior", "Leader" }
 for i, kind in ipairs(FILTERS) do
 	local button = Button(squadsPage, kind, 76, 20)
 	button:SetPoint("TOPRIGHT", -16 - (#FILTERS - i) * 80, -354)
@@ -463,7 +462,7 @@ function Refresh()
 	local list = {}
 	local collection = ns.Collection()
 	for _, data in ipairs(collection) do
-		if not filter or data.type == filter or (filter == "Named" and ns.IsNamed(data)) then
+		if not filter or data.type == filter or (filter == "Leader" and ns.IsNamed(data)) then
 			list[#list + 1] = data
 		end
 	end

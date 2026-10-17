@@ -22,9 +22,10 @@ local _, ns = ...
 local Duel = {}
 ns.Duel = Duel
 
-ns.PROTOCOL = 8 -- 3: turn based, twist bans; 4: virtual clock (attack times on the wire), Warrior;
+ns.PROTOCOL = 12 -- 3: turn based, twist bans; 4: virtual clock (attack times on the wire), Warrior;
 -- 5: cast times on the wire; 6: heals without cooldown; 7: casters only cast, healers only heal,
--- waiting Healers act when an ally gets hurt; 8: casters' turns by their cast time. Any change to the fight rules needs a new number,
+-- waiting Healers act when an ally gets hurt; 8: casters' turns by their cast time; 9: power from
+-- stats (the cap check must match on both sides); 10: rarity flags (dungeon bosses); 11: abilities; 12: abilities' spell ids, players' class abilities. Any change to the fight rules needs a new number,
 -- or two clients would play different fights.
 local ASK_EVERY = 90 -- seconds between our "where are you?" while we wait on them
 local ASK_GAP = 20 -- at most one per game this often
@@ -56,7 +57,7 @@ end
 
 -- Squads on the wire ------------------------------------------------------------------------
 -- "ownerLevel;npcId,stars,type,rarity,family,flags,level,health,attack,armor,spellPower,
---  attackTime,castTime (both in tenths of a second),spell,name;..."
+--  attackTime,castTime (both in tenths of a second),abilities ("s30*+w100"),spell,name;..."
 -- Stats travel with the cards: a card is the real mob as its owner measured it. Both clients
 -- build the fight from both wires, so they fight the same cards.
 
@@ -82,9 +83,9 @@ function ns.EncodeSquad(cards, ownerLevel)
 	for _, card in ipairs(cards) do
 		out[#out + 1] = table.concat({ card.npcId or 0, card.stars or 0, TYPE_CODE[card.type] or "T",
 			RARITY_CODE[card.classification] or "n", FAMILY_CODE[card.family] or "H",
-			card.player and "p" or "", card.level or 1, card.health, card.attack, card.armor,
+			(card.player and "p" or "") .. (card.dungeon and "d" or ""), card.level or 1, card.health, card.attack, card.armor,
 			card.spellPower or 0, math.floor((card.attackSpeed or ns.ATTACK_SPEED) * 10 + 0.5),
-			math.floor((card.castTime or ns.SPELL_TIME) * 10 + 0.5), Clean(card.spell),
+			math.floor((card.castTime or ns.SPELL_TIME) * 10 + 0.5), ns.EncodeAbilities(card.abilities), Clean(card.spell),
 			Clean(card.name) ~= "" and Clean(card.name) or "?" }, ",")
 	end
 	return table.concat(out, ";")
@@ -98,8 +99,8 @@ function ns.DecodeSquad(text, owner)
 	end
 	local cards = {}
 	for part in text:sub(#tostring(ownerLevel) + 2):gmatch("[^;]+") do
-		local npcId, stars, kind, rarity, family, flags, level, health, attack, armor, spellPower, tenths, castTenths, spell, name =
-			part:match("^(%d+),(%d),(%a),(%a),(%a),(%a*),(%d+),(%d+),(%d+),(%d+),(%d+),(%d+),(%d+),([^,]*),(.+)$")
+		local npcId, stars, kind, rarity, family, flags, level, health, attack, armor, spellPower, tenths, castTenths, abilities, spell, name =
+			part:match("^(%d+),(%d),(%a),(%a),(%a),(%a*),(%d+),(%d+),(%d+),(%d+),(%d+),(%d+),(%d+),([^,]*),([^,]*),(.+)$")
 		if not npcId or not TYPE_OF[kind] or not RARITY_OF[rarity] or not FAMILY_OF[family] or tonumber(tenths) < 5
 			or tonumber(castTenths) < ns.GCD * 10 then
 			return nil
@@ -107,12 +108,12 @@ function ns.DecodeSquad(text, owner)
 		local view = ns.CardView({
 			npcId = tonumber(npcId), stars = tonumber(stars), type = TYPE_OF[kind],
 			classification = RARITY_OF[rarity], family = FAMILY_OF[family], name = name, zone = "",
-			player = flags == "p" or nil, remote = owner, level = tonumber(level), spell = spell ~= "" and spell or nil,
-			attackSpeed = tonumber(tenths) / 10,
+			player = flags:find("p") and true or nil, dungeon = flags:find("d") and true or nil, remote = owner, level = tonumber(level), spell = spell ~= "" and spell or nil,
+			attackSpeed = tonumber(tenths) / 10, abilities = ns.DecodeAbilities(abilities),
 			stats = { health = tonumber(health), attack = tonumber(attack), armor = tonumber(armor),
 				spellPower = tonumber(spellPower) > 0 and tonumber(spellPower) or nil, castTime = tonumber(castTenths) / 10 },
 		})
-		view.level, view.power = tonumber(level), tonumber(level) -- theirs, also for their own card
+		view.level = tonumber(level) -- theirs, also for their own card
 		if view.npcId == 0 and not view.player then
 			view.npcId = nil -- a training card: no mob behind it
 		end

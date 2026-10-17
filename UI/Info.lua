@@ -66,17 +66,17 @@ local function Sections()
 	})
 
 	local rarities = {}
-	for _, key in ipairs({ "normal", "elite", "rare", "rareelite", "worldboss" }) do
+	for _, key in ipairs(ns.RARITY_KEYS) do
 		local rarity = ns.RARITIES[key]
 		rarities[#rarities + 1] = Colored(rarity.color, rarity.name)
 	end
 	Section("Rarity", {
-		"A card's rarity comes from the mob: normal mobs are Common, elites Uncommon, rares Rare, rare elites Epic, bosses Legendary. Rarer mobs are stronger mobs, so their cards are too.",
+		"A card's rarity comes from the mob, like item quality: normal mobs are Common (Uncommon with 1 star, Rare with 4), elites and named normal mobs Uncommon, named elites Rare, rares, rare elites and dungeon bosses Epic, raid and world bosses Legendary. Your own card is Rare. A card's strength comes from the real mob, not from its rarity.",
 		table.concat(rarities, "     "),
 	})
 
 	local roles = {
-		Tank = ("Blocks: while you have a living Tank, the enemy's attacks and spells have to target a Tank. %s more health, %s less damage and %s slower attacks than the mob."):format(Pct(ns.TANK_HEALTH - 1), Pct(1 - ns.TANK_DAMAGE), Pct(ns.TANK_SLOW - 1)),
+		Tank = ("Blocks: while you have a living Tank, the enemy's attacks and spells have to target a Tank. %s more health, %s more armor, %s less damage and %s slower attacks than the mob."):format(Pct(ns.TANK_HEALTH - 1), Pct(ns.TANK_ARMOR - 1), Pct(1 - ns.TANK_DAMAGE), Pct(ns.TANK_SLOW - 1)),
 		Mage = "Only casts: its spell ignores armor and has no cooldown.",
 		Warrior = "Melee damage: its edge is the real mob's hits and attack time.",
 		Healer = ("Only heals: an ally you pick, like a Mage's spell (its cast time, no cooldown); each heal is %s weaker than the one before. With nobody hurt it waits, and gets its turn the moment an ally is hurt."):format(Pct(1 - R.healFade)),
@@ -88,6 +88,17 @@ local function Sections()
 	end
 	types[#types + 1] = "Healers support any squad."
 	Section("Combat types", types)
+
+	local abilities = {
+		("Mobs that stun, fear, silence, disarm or root, slow, poison or enrage pass that on to their cards (at most %d per card, the strongest). Bestiary learns it from the loss of control alert on you, from the descriptions of the mob's spells, from its emotes and from poisons it leaves on you."):format(ns.MAX_ABILITIES),
+		"An ability that's part of the card's spell (Frostbolt's slow) comes with every cast; the others get their own circle in a duel and a cooldown. Enrage works by itself. Abilities make a card's power higher.",
+	}
+	for _, key in ipairs(ns.ABILITY_ORDER) do
+		local def = ns.ABILITIES[key]
+		abilities[#abilities + 1] = ("%s |cffffd200%s|r  %s%s"):format(Icon(def.icon), def.name, ns.AbilityText({ key = key }),
+			def.passive and "" or (" Every %d s."):format(def.cooldown))
+	end
+	Section("Abilities", abilities)
 
 	local families = {}
 	local names = {}
@@ -107,13 +118,13 @@ local function Sections()
 
 	Section("Leaders", {
 		"Only named mobs lead: rares, rare elites, bosses, and known named mobs like Hogger or Mor'Ladim. A named card always leads its squad and wears the dragon ring.",
-		"Your first leader is you: every character starts with a card of themselves. It leads like a named card but is only as strong as a common mob of your level and never gains stars. Its level is always yours, its type comes from your class.",
+		"Your first leader is you: every character starts with a card of themselves. It leads like a named card, is Rare, has the stats of a common mob of your level and never gains stars. Its level is always yours, its type comes from your class, and it has 4 abilities of your class (Kidney Shot, Polymorph, Psychic Scream, ...).",
 		"A squad doesn't need a leader, but can have at most one. The leader's bonus goes to allies of its combat type (see above).",
 	})
 
 	Section("Squads", {
 		"You build three squads, front to back, as many cards as fit under the power cap. Before a duel you pick one in secret; you can switch until you press Ready.",
-		("Only power counts: a card's power is its level, and the sum of a squad's levels must fit under the cap, %d times your level (%d now). And at most one named card (the leader)."):format(ns.CAP_PER_LEVEL, ns.POWER_CAP),
+		("Only power counts: the sum of a squad's power must fit under the cap, %d times your level (%d now). A card's power is its level times how strong it is against a normal mob of that level (health and damage per second): a normal mob's card is about its level, an elite's about twice that. And at most one named card (the leader)."):format(ns.CAP_PER_LEVEL, ns.POWER_CAP),
 		"The order in a squad doesn't matter: you pick every target yourself (Tanks block, see Combat types).",
 	})
 

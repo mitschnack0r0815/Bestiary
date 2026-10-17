@@ -28,6 +28,8 @@ local fightGuids = {} -- npcId -> { guid = true } of the mobs of that type fight
 local fightKills = {} -- npcId -> kills
 local fightSpellHits = {} -- npcId -> { plain spell hits on us, as factors of a typical hit }
 local fightTapped = false -- someone else's mob died in it: its damage isn't all in our meter
+local fightShared = false -- one of our mobs fought a player outside our group: its damage isn't all in our meter
+local FightingUs -- below
 
 -- Measuring (ARCHITECTURE.md 4.0): samples per mob type, account wide (they don't depend on
 -- who measured), the median is the value. Samples are factors against the typical mob of the
@@ -229,6 +231,9 @@ local function CacheUnit(unit)
 	end
 	if level == -1 or info.boss then
 		info.classification = "worldboss" -- skull level, or a dungeon or raid boss
+		-- where: a 5-man boss ("party") is Epic, raid and world bosses Legendary
+		local inside, instanceType = IsInInstance()
+		info.instance = inside and Clean(instanceType) or "world"
 	end
 	info.classification = info.classification or "normal"
 	if creatureType then
@@ -336,7 +341,9 @@ local function OnCast(event, unit, castGUID, spellId)
 		return
 	end
 	castSeen[key] = GetTime()
-	if event ~= "UNIT_SPELLCAST_START" then
+	-- Only mobs fighting us: a mob nearby casting at someone else must not get our resists,
+	-- spell hits or stuns
+	if event ~= "UNIT_SPELLCAST_START" and FightingUs(unit) then
 		castDone[guid] = { time = GetTime(), npcId = npcId, guid = guid }
 		ns.FightLog.Count(npcId, "casts")
 	end
@@ -549,6 +556,14 @@ local function RecentCaster()
 	return found
 end
 
+-- For Abilities.lua: who did something to us just now
+ns.RecentCaster = function()
+	return RecentCaster()
+end
+ns.Attacker = function()
+	return Attacker()
+end
+
 local function OnCombat(unit, action, flag, amount, school)
 	unit, action, flag, amount, school = Clean(unit), Clean(action), Clean(flag), Clean(amount), Clean(school)
 	if unit == "player" and action and action ~= "HEAL" and action ~= "ENERGIZE" then
@@ -700,7 +715,7 @@ local function Kill(guid, npcId, how)
 end
 
 -- Whether a mob is fighting us: we're on its threat list, or it targets us or our pet
-local function FightingUs(unit)
+function FightingUs(unit)
 	if UnitThreatSituation and Clean(UnitThreatSituation("player", unit)) ~= nil then
 		return true
 	end
@@ -724,6 +739,12 @@ local function Watch(unit)
 		end
 	elseif FightingUs(unit) then
 		engaged[guid] = GetTime()
+		-- It's after a player outside our group too: they hit it, so its health can't be measured
+		local target = unit .. "target"
+		if Clean(UnitIsPlayer(target)) and not Clean(UnitIsUnit(target, "player"))
+			and not Clean(UnitInParty(target)) and not Clean(UnitInRaid(target)) then
+			fightShared = true
+		end
 		fightGuids[npcId] = fightGuids[npcId] or {}
 		fightGuids[npcId][guid] = true
 		ns.FightLog.Mob(npcId, guid, guidLevels[guid])
@@ -813,7 +834,7 @@ local function ReadMeter()
 	for _, count in pairs(fightKills) do
 		kills = kills + count
 	end
-	if kills == 1 and not fightTapped and not IsInGroup() then
+	if kills == 1 and not fightTapped and not fightShared and not IsInGroup() then
 		local npcId = next(fightKills)
 		local guids = 0
 		for _ in pairs(fightGuids[npcId] or {}) do
@@ -899,7 +920,7 @@ local function TryMeter()
 	wipe(fightKills)
 	wipe(fightSpellHits)
 	wipe(guidLevels)
-	fightTapped = false
+	fightTapped, fightShared = false, false
 	if not ok then
 		Debug("Damage meter: " .. tostring(err))
 	end
@@ -1025,7 +1046,7 @@ local function OnEvent(_, event, ...)
 			wipe(fightGuids)
 			wipe(fightKills)
 			wipe(fightSpellHits)
-			fightTapped = false
+			fightTapped, fightShared = false, false
 		end
 		meterDue = true
 		ReadArmor()
@@ -1125,7 +1146,7 @@ function ns.DebugReport(npcId)
 		if ns.BuildCard then
 			local card = ns.BuildCard(npcId)
 			if card then
-				ns.Print(("  card would be: %s %s, power %d"):format(card.type, ns.RARITIES[card.classification].name, card.power))
+				ns.Print(("  card would be: %s %s, power %d"):format(card.type, ns.RarityOf(card).name, card.power))
 			end
 		end
 	end

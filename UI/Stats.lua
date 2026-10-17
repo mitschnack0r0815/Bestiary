@@ -42,7 +42,8 @@ end
 
 -- A card's name with its type icon, in its rarity color
 local function CardName(entry)
-	local rarity = ns.RARITIES[entry.classification or "normal"] or ns.RARITIES.normal
+	local rarity = ns.RarityOf({ classification = entry.classification or "normal", npcId = entry.npcId, name = entry.name,
+		player = entry.npcId == ns.SELF_ID or nil })
 	local kind = ns.TYPES[entry.type or ""]
 	return (kind and (Icon(kind.icon) .. " ") or "") .. Colored(rarity.color, entry.name or "?")
 end
@@ -181,7 +182,8 @@ local function CollectionSections()
 	local collection = ns.Collection()
 	local byRarity, byType, byFamily, stars, named, strongest = {}, {}, {}, 0, 0, nil
 	for _, card in ipairs(collection) do
-		byRarity[card.classification] = (byRarity[card.classification] or 0) + 1
+		local key = ns.RarityKey(card)
+		byRarity[key] = (byRarity[key] or 0) + 1
 		byType[card.type] = (byType[card.type] or 0) + 1
 		byFamily[card.family] = (byFamily[card.family] or 0) + 1
 		stars = stars + card.stars
@@ -197,7 +199,7 @@ local function CollectionSections()
 		strongest and ("Strongest:  %s  %s"):format(CardName(strongest), Grey("power " .. strongest.power)) or Grey("No cards yet."),
 	}
 	local rarities = {}
-	for _, key in ipairs({ "normal", "elite", "rare", "rareelite", "worldboss" }) do
+	for _, key in ipairs(ns.RARITY_KEYS) do
 		rarities[#rarities + 1] = Colored(ns.RARITIES[key].color, ns.RARITIES[key].name) .. " " .. (byRarity[key] or 0)
 	end
 	lines[#lines + 1] = table.concat(rarities, "   ")

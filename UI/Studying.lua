@@ -96,7 +96,7 @@ local function Row(i)
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 		GameTooltip:AddLine(self.mobName, 1, 0.82, 0)
 		if info then
-			local rarity = ns.RARITIES[info.classification] or ns.RARITIES.normal
+			local rarity = ns.MobRarity(self.npcId, info)
 			GameTooltip:AddLine(("%s  ·  %s"):format(rarity.name, tostring(info.creatureType)), 1, 1, 1)
 		end
 		GameTooltip:AddLine(("Studied %.1f of %d seconds"):format(entry.seconds, ns.STUDY_SECONDS), 0.8, 0.8, 0.8)
@@ -129,7 +129,7 @@ local function Refresh()
 		local info = ns.MobInfo(item.npcId)
 		local view = ns.BuildCard(item.npcId)
 		row.entry, row.info, row.view, row.mobName, row.npcId = entry, info, view, item.name, item.npcId
-		local rarity = ns.RARITIES[info and info.classification or "normal"] or ns.RARITIES.normal
+		local rarity = ns.MobRarity(item.npcId, info)
 		local family = info and info.family and ns.FAMILIES[info.family]
 		row.family:SetTexture(family and family.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
 		row.name:SetText(item.name)

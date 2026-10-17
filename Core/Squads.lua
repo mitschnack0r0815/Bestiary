@@ -41,6 +41,7 @@ local function EnsureSelfCard()
 	card.family = "Humanoid"
 	card.type = CLASS_TYPE[class] or "Tank"
 	card.class = class
+	card.spell = ns.CLASS_SPELLS[class] -- casters and healers cast their class's spell
 	card.zone = GetRealZoneText and GetRealZoneText() or card.zone or ""
 	card.stars = 0
 	if ns.Refresh then
