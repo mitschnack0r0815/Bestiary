@@ -101,7 +101,7 @@ local function Row(i)
 		end
 		GameTooltip:AddLine(("Studied %.1f of %d seconds"):format(entry.seconds, ns.STUDY_SECONDS), 0.8, 0.8, 0.8)
 		if self.view then
-			local _, why = ns.TypeFrom(entry, info and info.family)
+			local _, why = ns.TypeFrom(entry, info and info.family, info, self.npcId)
 			GameTooltip:AddLine(("Card so far: %s, power %d"):format(self.view.type, self.view.power), 1, 1, 1)
 			GameTooltip:AddLine(why, 0.6, 0.6, 0.6, true)
 		end
@@ -128,7 +128,7 @@ local function Refresh()
 		local entry = ns.Studied(item.npcId)
 		local info = ns.MobInfo(item.npcId)
 		local view = ns.BuildCard(item.npcId)
-		row.entry, row.info, row.view, row.mobName = entry, info, view, item.name
+		row.entry, row.info, row.view, row.mobName, row.npcId = entry, info, view, item.name, item.npcId
 		local rarity = ns.RARITIES[info and info.classification or "normal"] or ns.RARITIES.normal
 		local family = info and info.family and ns.FAMILIES[info.family]
 		row.family:SetTexture(family and family.icon or "Interface\\Icons\\INV_Misc_QuestionMark")

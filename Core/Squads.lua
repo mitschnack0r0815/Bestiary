@@ -2,7 +2,7 @@ local addonName, ns = ...
 
 -- Your three squads of real cards (BestiaryChar.squads, per character): card ids front to back
 -- ("npc<id>", the id of a card view). And the sparring partner you duel until duels between
--- players exist: three squads (Tank, Mage and Assassin heavy) made from mobs you've seen, about
+-- players exist: three squads (Tank, Mage and Warrior heavy) made from mobs you've seen, about
 -- as strong as your own squads.
 ns.SPARRING_NAME = "Sparring Partner"
 
@@ -20,7 +20,7 @@ end
 -- it's "named", but only as strong as a common mob's card and it never gains stars. Saved under
 -- NPC id 0; its type comes from the class.
 ns.SELF_ID = 0
-local CLASS_TYPE = { WARRIOR = "Tank", PALADIN = "Tank", ROGUE = "Assassin", HUNTER = "Assassin",
+local CLASS_TYPE = { WARRIOR = "Tank", PALADIN = "Tank", ROGUE = "Warrior", HUNTER = "Warrior",
 	PRIEST = "Healer", DRUID = "Healer", MAGE = "Mage", WARLOCK = "Mage", SHAMAN = "Mage" }
 
 local function EnsureSelfCard()
@@ -31,7 +31,7 @@ local function EnsureSelfCard()
 	end
 	local card = BestiaryChar.cards[ns.SELF_ID]
 	if not card then
-		card = { npcId = ns.SELF_ID, stars = 1, obtained = time() }
+		card = { npcId = ns.SELF_ID, stars = 0, obtained = time() }
 		BestiaryChar.cards[ns.SELF_ID] = card
 		ns.Print(("Your first card is yourself: |cffffd200%s|r, a %s and your first leader."):format(name, CLASS_TYPE[class] or "Tank"))
 	end
@@ -42,17 +42,28 @@ local function EnsureSelfCard()
 	card.type = CLASS_TYPE[class] or "Tank"
 	card.class = class
 	card.zone = GetRealZoneText and GetRealZoneText() or card.zone or ""
-	card.stars = 1
+	card.stars = 0
 	if ns.Refresh then
 		ns.Refresh()
+	end
+end
+
+-- The cap follows your level (CAP_PER_LEVEL per level)
+local function SetCap(level)
+	ns.POWER_CAP = ns.PowerCap(level)
+	ns.CAPS = { ns.POWER_CAP }
+	for _, squad in ipairs(ns.squads or {}) do
+		squad.cap = ns.POWER_CAP
 	end
 end
 
 local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
 events:RegisterEvent("PLAYER_LOGIN")
+events:RegisterEvent("PLAYER_LEVEL_UP")
 events:SetScript("OnEvent", function(_, event, name)
-	if event == "PLAYER_LOGIN" then
+	if event == "PLAYER_LOGIN" or event == "PLAYER_LEVEL_UP" then
+		SetCap(event == "PLAYER_LEVEL_UP" and name or nil) -- level up: the new level comes with it
 		if BestiaryChar then
 			EnsureSelfCard()
 		end
@@ -67,6 +78,10 @@ events:SetScript("OnEvent", function(_, event, name)
 		squad.cap = ns.POWER_CAP
 	end
 	ns.squads = BestiaryChar.squads
+	ns.MigrateStars()
+	ns.MigrateTypes()
+	ns.RefreshCards(true)
+	SetCap()
 	events:UnregisterEvent("ADDON_LOADED")
 end)
 
@@ -172,7 +187,7 @@ local SPARRING_MIN = 3 -- the sparring partner always sends at least this many c
 local SPARRING = {
 	{ name = "Shield Wall", types = { "Tank", "Tank", "Healer", "Mage", "Tank", "Mage", "Tank" } },
 	{ name = "Spell Circle", types = { "Tank", "Mage", "Mage", "Mage", "Healer", "Mage", "Mage" } },
-	{ name = "Knife Pack", types = { "Assassin", "Assassin", "Tank", "Assassin", "Assassin", "Assassin", "Assassin" } },
+	{ name = "War Band", types = { "Warrior", "Warrior", "Tank", "Warrior", "Warrior", "Warrior", "Warrior" } },
 }
 
 local function Random(seed)
@@ -234,10 +249,11 @@ function ns.SparringSquads(seed)
 				used[mob.npcId] = true
 				view = ns.CardView({
 					npcId = mob.npcId, name = mob.info.name, classification = mob.info.classification,
-					family = mob.info.family, type = kind, stars = random(3), zone = "",
+					family = mob.info.family, type = kind, stars = random(3) - 1, zone = "", remote = ns.SPARRING_NAME,
+					level = math.min(ns.DropLevel(mob.npcId, mob.info.classification), ns.LevelCap({ classification = mob.info.classification })),
 				})
 			else
-				view = ns.TrainingCard(kind, ns.BASE_POWER, "Sparring " .. kind, i)
+				view = ns.TrainingCard(kind, UnitLevel("player") or 1, "Sparring " .. kind, i)
 			end
 			if i > SPARRING_MIN and power + view.power > target then
 				break

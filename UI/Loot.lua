@@ -139,7 +139,7 @@ local function Display(entry)
 	name:SetText(view.name)
 	name:SetTextColor(r, g, b)
 	local kindInfo = ns.TYPES[view.type]
-	info:SetText(("%s  ·  %s  ·  %s  ·  Power %d"):format(
+	info:SetText(("%s  ·  %s  ·  %s  ·  Level %d"):format(
 		kindInfo and Colored(kindInfo.color, view.type) or view.type, rarity.name, view.family, view.power))
 	shownAt = GetTime()
 	alert:ClearAllPoints()

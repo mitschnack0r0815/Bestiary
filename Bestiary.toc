@@ -10,8 +10,10 @@
 # squads and stats (see ARCHITECTURE.md)
 Core\Config.lua
 Core\Named.lua
+Core\LevelStats.lua
 Core\Rules.lua
 Core\Fight.lua
+Core\FightLog.lua
 Core\Tracker.lua
 Core\Cards.lua
 Core\Stats.lua
@@ -20,10 +22,12 @@ Core\Comm.lua
 Core\Duel.lua
 Core\Board.lua
 Core\Hardcore.lua
+Core\LastFight.lua
 
 # UI
 UI\Card.lua
 UI\Window.lua
+UI\Duel.lua
 UI\Collection.lua
 UI\Studying.lua
 UI\Board.lua

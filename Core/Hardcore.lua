@@ -13,7 +13,7 @@ function ns.ResetCollection()
 	wipe(BestiaryChar.cards)
 	wipe(BestiaryChar.drops)
 	if me then
-		me.stars, me.stamina, me.exhausted = 1, 100, nil
+		me.stars, me.stamina, me.exhausted = 0, 100, nil
 		BestiaryChar.cards[ns.SELF_ID] = me
 	end
 	for _, squad in ipairs(ns.squads or {}) do
@@ -30,7 +30,7 @@ local BASIC = {
 	{ 732, "Murloc Lurker", "Humanoid" }, { 257, "Kobold Worker", "Humanoid" }, { 1501, "Mindless Zombie", "Undead" },
 	{ 3098, "Mottled Boar", "Beast" }, { 2955, "Plainstrider", "Beast" },
 }
-local BASIC_TYPES = { "Tank", "Tank", "Mage", "Assassin", "Healer" }
+local BASIC_TYPES = { "Tank", "Tank", "Mage", "Warrior", "Healer" }
 
 -- Gives `count` common 1-star cards (as test cards: they don't count as drops)
 function ns.FillBasicCards(count)
@@ -60,7 +60,7 @@ function ns.FillBasicCards(count)
 			given = given + 1
 			BestiaryChar.cards[mob[1]] = {
 				npcId = mob[1], name = mob[2], classification = "normal", family = mob[3],
-				type = BASIC_TYPES[(given - 1) % #BASIC_TYPES + 1], stars = 1, zone = "", obtained = time(), test = true,
+				type = BASIC_TYPES[(given - 1) % #BASIC_TYPES + 1], stars = 0, zone = "", obtained = time(), test = true,
 			}
 		end
 	end

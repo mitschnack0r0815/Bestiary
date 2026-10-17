@@ -40,7 +40,10 @@ the unit API on units we can see, and secret values are skipped, never compared 
 | Mob name, level, elite/rare, creature type | `UnitName`, `UnitLevel`, `UnitClassification`, `UnitCreatureType` while it's target, mouseover, focus or nameplate; cached by NPC id | A mob never seen that way has no data: no drop |
 | Tapped by someone else | `UnitIsTapDenied` while cached | Tapped-away mobs give nothing |
 | Fighting time | Every 0.5 s: visible mobs with `UnitAffectingCombat` | Study time (4.0) |
+| Instant casts and spell damage | Debuffs mobs put on you (`UNIT_AURA`, the aura names its caster), buffs on every visible mob (also before the fight: Lightning Shield, Stealth) credited to whoever cast them (itself or an ally), and damage you take by school (`UNIT_COMBAT`: non-physical = spells), credited to the one visible mob targeting you (nobody if several) | Instant spells (shocks, Lightning Shield) leave no cast bar and often no cast event; poisons point to Assassin |
 | What the mob did | Casts of visible mobs: `UNIT_SPELLCAST_START` / `_SUCCEEDED` / `_CHANNEL_START` (counted even when the spell is secret) plus their cast bar every 0.5 s (`UnitCastingInfo` / `UnitChannelInfo`: name and icon), each cast once; heals by name; `UnitPowerType` (mana), `UnitClass`, `UnitAttackSpeed` | Used for its combat type (3.5); no damage numbers, schools, dodges or parries |
+| Spells that hit us, and which mob cast them | Blizzard's damage meter `C_DamageMeter`, read once per fight when the combat restriction lifts: `DamageTaken` for the player lists spell id, damage and the mob's name; `EnemyDamageTaken` maps names to NPC ids | Mob casts themselves are **always secret** (`SecretWhenUnitSpellCastRestricted`: any unit but the player or pet, in or out of combat). The meter only has spells that did damage: misses, resists, heals and buffs aren't in it |
+| Resisted spells | `UNIT_COMBAT` RESIST on the player (not secret), credited to every mob that finished a cast within 2 s | Melee can't be resisted, so a resist is a spell whose name we never learn |
 | Death | `PLAYER_DEAD` | Not on Feign Death. Also check `UnitIsDeadOrGhost("player")` on login for deaths while the addon was off |
 
 ## 3. Cards
@@ -51,28 +54,42 @@ A card is one **NPC id** (all "Defias Pillager" share one id). Stored per card:
 `npcId, name, classification, family, combat type, stars (card level),
 obtained (time, zone)`.
 
-### 3.2 Stats without a database
+### 3.2 Stats: the real mob, by level (decided 2026-10-17)
 
-We don't ship a mob database. A card's stats come from a formula over what we saw, so every
-client computes the same numbers:
+A card is a copy of the real mob, as accurate as possible, at the card's level. Replaces the
+power budget (rarity x stars, level didn't matter).
 
-- **Power budget** from classification and stars only; **the mob's level doesn't matter**
-  (decided), so a Young Wolf can be as good as a Searing Infernal of the same rarity:
-  `budget = base * rarityFactor * starFactor`
-  The **power** on the card (what counts against the cap) reads like a level (decided): the
-  budget scaled to **0-63**, where a Legendary card with 5 stars is 63. A common 1-star card
-  is 13, elite 21, rare 24, rare elite 32, boss 39; each star adds about 15%. The cap is
-  100 (was 500 before the rescale). Stats still come from the budget.
-  rarityFactor: normal 1, elite 1.6, rare 1.8, rare elite 2.4, boss 3.
-  Stars 1-5: +15% each.
-- The budget is split into **Attack / Health / Speed** by family (beasts fast, undead tanky,
-  demons hard-hitting, ...) and nudged by a seeded roll on the NPC id, so two beasts of the same
-  rarity still differ, always the same way for everyone.
-- One **ability** per card: picked by a seeded roll on the NPC id from its family's pool (3.4).
-  Elites and better get a second ability.
+- **How mobs scale with level:** the game builds a mob's stats from a table per level and NPC
+  class (warrior, paladin, mage; rogues use the warrior rows) times the mob's own multipliers.
+  We ship that table (`Core/LevelStats.lua`, levels 1-63: health, base damage, attack power,
+  armor) from the MaNGOS Zero database (`creature_template_classlevelstats`,
+  github.com/mangoszero/database). The emulator community rebuilt it from the original game, so
+  Forever's numbers can differ a little; our measurements correct that at each mob's own level.
+  Typical melee hit = (base damage + attack power / 14) x attack time (cMaNGOS). First check:
+  Razormane Thornweaver (level 10 paladin, 2.0 s) is 15.5 per hit in the table; we measured
+  about 14 with the armor undone.
+- **A mob's factors:** measured value / table value at the level of that very mob (4.0,
+  "Measuring"): health, melee hit, each spell (against a 2.0 s melee hit). Until measured, a guess
+  by rarity (`ns.GUESSED_FACTORS`: elite health x3, damage x1.75, ...).
+- **Card stats at level L:** health = table health(L, class) x health factor; melee hit = table
+  hit(L, class, its attack speed) x melee factor; spell = table hit(L, class) x spell factor;
+  armor = table armor(L, class). Each star adds 3% to health and damage or healing (3.3).
+- **A fight round is 8 seconds** of the real fight (`ns.ROUND_SECONDS`): attack per round = melee
+  hits in 8 s, or for Mages and Healers with a known signature spell one cast every 4 s. Real
+  mobs take long to kill each other (two level 60 mobs: over a minute), so rounds are long; the
+  proportions between mobs stay real. Armor works like in the game (5.2).
+- **Levels (decided):** a card starts at the level of the mob it dropped from (skull = 63). Every
+  **5 duels** (won or lost, the sparring partner counts too) it gains a level,
+  never more than **3 above your level**, at most **60, named cards 63**. Your own card is always
+  your level. Saved on the card (`level`, `games`); cards from before levels take their mob's
+  level.
+- **Power = the card's level; the cap = the sum of levels** (decided): `5 x your level`
+  (`ns.CAP_PER_LEVEL`, 300 at 60), at most 7 cards. Each side's squad is checked against its
+  owner's cap.
 
-Duels send the card data along (npcId, classification, family, combat type, stars), so
-the other side can compute the same stats even if it has never seen that mob.
+Duels send the cards with their level and stats (protocol 2: owner level, then npcId, stars,
+type, rarity, family, flags, level, health, attack, armor, name), so the other side fights the
+mob as its owner measured it.
 
 ### 3.3 Rarity and drop chance
 
@@ -90,14 +107,23 @@ No mob drops anything before the addon has seen its kind fighting for 10 seconds
 different cards, so a new collection fills up fast. After that the extra halves every 5 more
 cards: x5 at 10, x3 at 15, x2 at 20, x1.5 at 25, about x1.1 at 39, gone at 40. Applied after
 the farm halving (4.2); a chance never goes over 100%.
+
+**Bad luck protection** (decided): per mob type, every kill of a studied mob that drops nothing
+raises its chance by 20% of the base chance, up to x5 (`BestiaryChar.dry`); its next real card
+resets it. A normal mob (4%) is at 12% after 10 dry kills and 20% after 20. Test tab drops
+don't count either way.
 **Copies** (decided): a normal (Common) card that isn't named can be owned up to **3 times**;
 getting it again gives another copy (the drop says "copy 2 of 3"), and a squad can hold as many
 copies as you own. The Collection tab shows "1x" to "3x" in the top left corner; on the Squads
 tab the badge counts the copies still free, and a card whose copies are all in the squad turns
 grey but stays listed. Copies share stars and stamina (a duel takes the biggest loss once).
 Duels check it too: at most 3 of a normal card, 1 of anything else.
-After 3 copies, and for every rarer card, getting a card you have adds a star (max 5). How many copies a star needs is a balance
-question for later; it depends on how much stars matter in a fight (see 5.3).
+Rarer cards are owned once; after that (and after 3 copies) card drops of that mob stop.
+
+**Stars (decided 2026-10-17)** are their own drop: cards start at 0 stars, and once you own a
+mob's card, every kill of that mob rolls for the next star: **10%** for the first, then half as
+likely for each next (5%, 2.5%, 1.25%, 0.625%), **max 5**. Each star makes the card **3%
+stronger** in health and damage or healing (no glow: tried and removed). Cards from before had 1 as their lowest: they lost one star once.
 
 ### 3.4 Families
 
@@ -127,7 +153,7 @@ the counters come from how each type fights (5.2), not from a "beats" table:
 
 | Type | How it fights | Strong against | Weak against |
 |---|---|---|---|
-| **Tank** | High health, slow. **Armor** takes a flat amount off every physical hit. Hits the front | Assassin: their many small hits barely get through | Mage |
+| **Tank** | Slow. **Armor** takes a share off every physical hit. Hits the front | Assassin: their many small hits barely get through | Mage |
 | **Mage** | Fragile. Hits **ignore armor** and splash onto the next enemy | Tank: big slow targets standing together | Assassin |
 | **Assassin** | Fastest. One hard strike that goes for the **back row**; armor counts triple against it | Mage: kills fragile casters before they cast | Tank |
 
@@ -156,7 +182,7 @@ Every character starts with a card of **themselves**, created on first login wit
 your name, your own 3D model as the portrait, family Humanoid, type from your class (Warrior
 and Paladin Tank, Rogue and Hunter Assassin, Priest and Druid Healer, Mage, Warlock and Shaman
 Mage). It counts as **named**, so it's your first leader, but it's **not strong**: Common
-rarity, 1 star, it never gains stars. Saved under NPC id 0 (`Core/Squads.lua`).
+rarity, 0 stars, it never gains stars. Saved under NPC id 0 (`Core/Squads.lua`).
 
 ## 4. Getting cards
 
@@ -189,7 +215,15 @@ addons on this client, see 2, so it's now fighting time seen through the unit AP
     - By NPC class: mage, warlock, priest Mage; rogue, hunter Assassin. (NPC classes only say
       how a mob uses resources: "paladin" is any mana user, often a casting beast, so it
       doesn't mean Tank.)
-    - Assassin: fast attacks (under 1.8 s). Tank: slow, heavy attacks (over 2.6 s).
+    - Mage also: more than 3 spell hits on you, at least half as many as its melee hits (instant
+      casters like shamans).
+    - Tank or Assassin by points: poisoned you +1 Assassin; Stealth or Prowl on itself +1
+      Assassin; Stoneskin, Harden Skin, Shield Wall/Block, Defensive Stance +1 Tank; fast attacks (under 1.8 s) +1 Assassin, slow, heavy attacks
+      (over 2.6 s) +1 Tank; and **sturdiness** (decided): the mob's maximum health against the
+      median of mobs you've seen of the same rarity within 2 levels (at least 5 of them; else
+      typical Classic health by level, elites x3, rares x1.4): 125% or more +1 Tank, 160% +2;
+      80% or less +1 Assassin, 60% or less +2. Bosses aren't compared. Most mobs
+      swing every 2.0 s, so health is what tells a sturdy Defias Thug from a frail wolf.
     - Otherwise its family's lean.
   - **Ability** (after the prototype) from its signature spell (the one it cast most). Mobs
     that cast nothing get a melee ability from their type and family.
@@ -207,11 +241,39 @@ addons on this client, see 2, so it's now fighting time seen through the unit AP
   with the kill after the 10 seconds are reached.
 - Since it's built from what **you** saw, two players' Defias Pillager cards can differ a
   little. Duels send the card data along (3.2), so that doesn't matter for fighting.
+- **Resisted only, no card** (decided): a mob seen casting whose spells were only ever resisted, with none of its spells known, never drops a card: it would guess its spells and is too likely wrong. Once one of its spells hits you and the damage meter names it, it can drop again. A kill of a casting mob whose spells are unknown waits until that fight's damage meter is read.
 - **Rares and bosses** usually fight for more than 10 seconds, so one proper fight studies
   them; their first kill after that drops the card for sure (3.3).
 - **Everything counts** (decided): a mob fighting anyone you can see is knowledge about it. A
   dungeon run studies the boss for the whole group at once, and watching a mob fight someone
   else (on its nameplate) teaches you about it too. Only the drop needs your group's kill (4.1).
+
+**Measuring (decided: as accurate as possible).** Per mob type, account wide (the numbers
+don't depend on who measured), last 25 samples, the median counts:
+- **Health:** mob health is always secret on this client (`UnitHealthMax` for anything not
+  player-controlled). Taken from the damage meter instead: damage it took to die (EnemyDamageTaken)
+  minus our overkill. Only when we're alone, it was the only mob of its type fighting us, the
+  only kill of the fight and nobody else's tapped mob died, else the numbers mix.
+- **Melee hit:** plain physical hits on us (`UNIT_COMBAT`, no crit, crushing, glancing, block),
+  credited to the one mob targeting us, with **our armor taken back out**: raw = hit / (1 -
+  armor / (armor + 400 + 85 x mob level)) (Classic formula, 75% cap, other constant from level
+  60). Our armor is read whenever it isn't secret. Not undone: damage taken talents and stances
+  (a few %), and physical specials of the mob mixed in (the median mostly ignores them).
+- **Spell damage:** plain non-physical hits on us right after one mob (only one) finished a
+  cast; after the fight they go to its spell if only one of its spells hit us in that fight
+  (the damage meter names it). Spells ignore armor; full hits aren't resisted, partial resists
+  are flagged and skipped.
+- Samples are stored as **factors** against the level table (3.2) at the level of that very mob
+  (seen on its nameplate or target), so mobs of one type at different levels agree.
+- Shown on the Test tab ("Measured": the value at its level, the factor, the sample count).
+
+**Fight log (the data to learn from).** Every fight is one record in `BestiaryAccount.fights`
+(account wide, newest 500): when and where, our level, class, armor, group and whether we died;
+each mob type in it (name, level range, class, rarity, attack speed, how many, kills, casts,
+resists, spells and their damage from the damage meter, health if measured); every hit on us in
+order (seconds, which mob we think, school, amount, flag: plain, crit, crushing, glancing, block,
+resist, or miss / dodge / parry); damage meter totals. `/bst fights` or "Fight log" on the Test
+tab shows it as text to copy out (`Core/FightLog.lua`).
 
 ### 4.1 Counting a kill
 
@@ -248,73 +310,70 @@ The leader's bonus goes to allies of its combat type (6.1). Front cards get
 attacked first, except by Assassins (back row) and splash. A card can be in more than one
 squad. You can change your squads any time, but a duel uses the squad you locked in for it.
 
-### 5.2 Fight rules (proposal)
+### 5.2 Fight rules: turn based (decided 2026-10-17)
 
-Deterministic, so both clients produce the same fight without talking during it: no damage
-rolls at all, and an own seeded random generator (seeded from the duel id, not `math.random`)
-only breaks ties and decides chance abilities. Same code and protocol version on both sides;
-the result comes from the simulation, never from the network.
+No autobattler any more: players play their cards' turns, a bit like Hearthstone, but all
+cards are on the table from the start (`Core/Fight.lua`).
 
-**Stats.** Every card has **Health**, **Attack** and **Speed**; Tank cards also have
-**Armor**. The power budget (3.2) is split by combat type, then nudged by family:
+**Deterministic.** No damage rolls; a seeded generator (seed from the duel's nonce and salt)
+only breaks speed ties. A fight is its two squads, the seed, the twist and the list of moves,
+so a duel only sends moves, and any client can rebuild the fight from them (after a reload,
+days later). A move is: action, target side, target slot (`a2.3`); the acting card is always
+the one whose turn it is. Moves that aren't legal are refused (a player sending one forfeits).
 
-| Type | Health | Attack | Speed | Armor |
-|---|---|---|---|---|
-| Tank | high | low | slow (3) | 40% of its Attack |
-| Mage | low | high | medium (5) | none |
-| Assassin | medium-low | medium | fast (8) | none |
+**Stats.** Health, attack (one melee hit), spell power (one cast), armor and attack time: the
+real mob at the card's level (3.2). **Fights run 4x faster than real ones** (`ns.PACE`, decided):
+real mobs take long to kill each other, so every hit and cast counts 4 times; the proportions
+stay real.
 
-Speed runs from 1 to 10: the type's speed, one up or down by a seeded roll on the NPC id.
-Cards show no level (decided): the mob's level doesn't count for anything.
+**Turn order: a virtual clock, no rounds (decided).** Every card has its own clock. A card's
+next turn comes after its real attack time (a mob that swings every 1.5 s gets twice the turns
+of one that swings every 3 s); after a spell or heal, after 3 s (its cast). Whichever card's
+time comes first, on either side, gets the turn, and its owner still picks what it does. Ties:
+the side that didn't just act (the very first tie: a coin flip by the seed), then the lower
+slot. Times are kept in tenths of a second. The Duel tab shows the clock and the next turns.
 
-**Start of the fight.** Squads stand in their order, position 1 in front. The twist (6.2) and
-leader abilities (6.1) apply, then "start of fight" abilities.
+**Actions** (picked by the player on the card's turn, by clicking a circle under the target).
+**Casters only cast, healers only heal (decided):** Mages have no Attack, Healers neither attack
+nor cast at enemies; a Healer with nobody hurt can only wait: it's off the clock until an ally gets hurt,
+then its turn comes at once (decided). Tanks and Warriors attack or use their spell.
+- **Attack:** its melee, physical.
+- **Spell:** the mob's signature spell, ignores armor, takes its **real cast time** (from the
+  game's spell data, `C_Spell.GetSpellInfo`, at least 1.5 s; 3 s if unknown). Mages cast
+  whenever they like; other cards every 10 s. **Strength (decided 2026-10-17):** as measured on
+  you (4.0); until then from the damage numbers in the spell's description
+  (`C_Spell.GetSpellDescription`, "18 to 20 Frost damage", at the mob's level); else **twice the
+  card's melee hit**. Mages and Healers without a known spell get such a guessed spell too.
+  Spell data is saved per mob account wide (`info.spellData`); the fight dump shows what the
+  game says about each spell (to check the descriptions have numbers on this client).
+- **Heal** (Healers instead of a spell): an ally below full health. Works like a Mage's spell
+  (decided): its cast time, no cooldown. Each heal 10% weaker than the one before.
 
-**One attack per card per round** (decided), unless an ability says otherwise. A Mage's splash
-is part of its one attack, a Healer's half heal part of its one heal.
+**Combat types:** Tank (blocks), Mage (spells without cooldown), **Warrior** (melee damage; was
+Assassin until 2026-10-17, renamed, decided), Healer. Leaders: Tank allies +20% armor, Mage
+spells +15%, Warrior allies attack 10% faster, heals +20%.
 
-**Rounds** (decided). At most 20. The cards pair up, one of each player per pair, and **speed
-decides who acts first**, not position: each side's cards line up fastest first (ties: the
-front-most), the fastest of each side form the first pair, and the faster card of a pair acts
-first (ties: a seeded coin flip). If one squad is bigger, its extra cards act one after another
-at the end of the round. Dead cards skip their turn. Position still decides who gets hit.
+**On screen (decided):** on your turn, every card your card can act on gets round icon buttons
+underneath, one per possible action (attack, spell; heal under allies that can be healed), no
+text (the tooltip shows the damage or heal). The card whose turn it is has sparks wandering
+around its border, like the autocast shine on pet buttons.
 
-**Actions by type:**
-- **Tank:** one hit for its Attack against the enemy's **front** card.
-- **Mage:** one spell for its Attack against the enemy's **front** card, **ignoring armor**,
-  plus a **splash** for half its Attack on the card right behind it (also ignoring armor).
-- **Assassin:** **one strike** for 160% of its Attack against the enemy's **back-most** card.
-  Armor counts **three times** against it: precise strikes look for gaps, and armor closes
-  them.
-- **Healer:** like Mage, but on its own side and healing instead of damage: heals the living
-  ally with the lowest health share for its Attack, plus half that on the living ally right
-  behind it, never above their maximum. Each of its heals is 10% weaker than the one before.
-  It never deals damage; with nobody hurt it does nothing that turn.
+**Tanks block (decided):** while a side has a living Tank, attacks and spells against it must
+target one of its Tanks. **The order in a squad doesn't matter
+any more.**
 
-**Damage.** Physical hits lose the target's Armor value, minimum 1: a Tank's hit once, an
-Assassin's strike three times. Mage ignores armor. So an Assassin's 35-point strike does 35
-to a caster but only 35 - 3 x 7 = 14 to a tank with Armor 7. (Tuned with headless runs: every
-matchup goes the triangle's way in 50 of 50 seeds at 150, 400 and 900 power.)
+**Armor** like in the game: armor / (armor + 400 + 85 x attacker level), at most 75%.
+Family bonuses and leaders as before (Elemental now strengthens spells and heals; Mage leader:
+Mage spells +15%; Tank leader: Tank armor +20%).
 
-**Abilities.** One trait per card from its family's pool, plus the leader ability. Triggers:
-start of fight, on attack, below 50% health (once), on death, every 3rd round. Chance-based
-abilities use the seeded generator.
+**End.** A side with no living cards loses; after 180 virtual seconds the side with more health
+left in percent wins. A resign is a loss.
 
-**End.** A side with no living cards loses. After 20 rounds: the side with more health left in
-percent of its total wins; equal is a draw.
+**Sparring partner (decided: simple):** heals an ally below 70% if it can, else the action
+and target that kill the most dangerous card it can kill, else the most damage, preferring
+hurt targets.
 
-**After the fight.** Each card's health lost in percent sets its stamina loss (6.3).
-
-**Why the triangle holds:**
-- **Tank beats Assassin:** armor counts three times against their strikes.
-- **Assassin beats Mage:** Assassins are fast and strike the back row hard, where the fragile
-  casters stand, and casters have no armor.
-- **Mage beats Tank:** spells ignore armor, and the splash hits the second tank standing
-  right behind the first.
-- **Placement adds counterplay:** an Tank card at the very back is a bodyguard against
-  Assassins, who then strike armor instead of casters. A Mage card in front is safe from
-  Assassins for a while but takes every Tank and Mage hit. Mixed squads soften every
-  counter.
+**Balance:** fine tuning comes next (open question).
 
 ### 5.3 Where the strategy is
 
@@ -344,6 +403,9 @@ triangle has to hold (each type beats the one it should), mixed squads should la
 and no single squad should beat everything.
 
 ### 5.4 Example fight
+
+> **Outdated:** written for the old automatic fight (front and back rows, splash). The fight is
+> turn based now (5.2).
 
 Twist: Calm Waters (none). Numbers are illustrative.
 
@@ -385,41 +447,38 @@ Alice built well against Assassins and would be crushed by Mage.
 
 ## 6. Duels
 
-Both players pick one of their three squads **without seeing the other's pick**. To keep it
-hidden even though the addon sends everything over whispers, it uses a commit and reveal with
-as few messages as possible: **4 whispers per duel** (implemented, `Core/Duel.lua`,
-`Core/Comm.lua`):
+Turn based and **asynchronous, no timers** (decided): a game survives reloads, logouts and
+both players being offline, like correspondence chess. Games are saved per character
+(`BestiaryChar.games`, the last finished one kept to look at). **One game at a time**
+(decided), against a player or the sparring partner: a new one (challenge or sparring) only
+once it's over or resigned, and a challenge that comes in meanwhile is answered "busy"
+(`Core/Duel.lua`, UI in `UI/Duel.lua`).
 
-1. **A → B `C|version|id|nonce`**: the challenge. The nonce sets the twist, so both see it
-   before picking.
-2. **B → A `A|id|commit`**: B accepted and picked in secret. The commit is a hash of B's squad
-   plus a secret salt, so B can't change it any more.
-3. **A → B `R|id|squad`**: A picks and shows its squad right away. No hash needed: B is already
-   bound.
-4. **B → A `S|id|squad|salt`**: B shows its squad; A checks it against the commit.
+Both players pick a squad and **ban one of 3 offered twists without seeing the other's**
+(commit and reveal):
 
-Both clients then run the same fight with the challenger as side 1 and a seed from the nonce
-and the salt (neither side could choose it), so **no result is sent**. Also `D|id|reason`
-(declined, busy, version) and `X|id` (cancelled).
+1. **A → B `C|version|id|nonce`**: the challenge. The nonce sets the 3 twists on offer.
+2. **B → A `A|id|commit`**: B picked a squad and banned a twist; the commit is a hash of both
+   plus a secret salt.
+3. **A → B `R|id|ban|squad`**: A picks, bans and shows. No hash needed: B is bound.
+4. **B → A `S|id|ban|squad|salt`**: B shows; A checks it against the commit. The twist is drawn
+   from what's left, the seed comes from the nonce and the salt.
+5. **`M|id|n|move`**: move n, by whoever's turn it is.
 
-- **Lost whispers** heal without extra traffic in the normal case: nothing is acknowledged on
-  its own, a message is only sent again when the reply it waits for doesn't come (challenge
-  after 30 and 75 s, accept once after 90 s, reveal after 8, 18 and 30 s), and a repeated
-  message gets the same answer again. A lost accept is healed by the repeated challenge.
-- **Cheating:** a squad that doesn't match its commit or breaks the rules (size, cap,
-  one leader), or an opponent who doesn't reveal after seeing ours, loses by forfeit.
-- **Limits:** B has 2 minutes to pick and accept, A 2.5 minutes after that; both players have
-  to be online. Same faction only (whispers). Squads go as "npcId,stars,type,rarity,family,
-  flags,name"; a message over 255 characters goes in parts.
-- **Tested headless** with simulated clients over a lossy network: every message lost once,
-  everything duplicated, cheating, rule-breaking squads, no answer, no pick, a sore loser,
-  offline players, other versions, both challenging at once, long names, hidden (secret)
-  message contents, a third player meddling, cross-realm names; 300 duels at 15% loss, 10%
-  duplicates and up to 3 s delay: no duel ever ended with different results on the two
-  sides, 5 whispers per duel on average. And two complete clients dueling through the UI.
+Also `Q|id|step|n` ("where are you?") and `X|id|reason` (declined, cancelled, resigned).
+Squads go with their stats (protocol 3: owner level, then per card npcId, stars, type, rarity,
+family, flags, level, health, attack, armor, spell power, spell, name).
 
-**Open:** duels while the other player is offline (like Quiz Duel), each step waiting until
-they're back. That needs the commits saved and both reveals to wait; the live version first.
+- **Catching up instead of timers:** Q goes out 8 s after login for every running game,
+  whenever we hear anything from that player (they're online), and every 90 s while we wait
+  on them. The answer is whatever they're missing: our last message (challenge, commit,
+  squad) and the moves after their count. Duplicates are ignored.
+- **Cheating:** a squad that doesn't match its commit, breaks the rules (size, cap of its
+  owner's level, one leader) or bans a twist that isn't on offer, or a move that isn't legal,
+  loses by forfeit.
+- **Tested headless:** two simulated clients with 20-50% of whispers lost, reloads every few
+  steps and one player going offline and back: every game finished with the same moves and
+  the same winner on both sides. And a whole sparring game through the page's buttons.
 
 **What you know about your opponent:** nothing about their squads before the fight, only the
 twist (6.2). Reading them comes from knowing the player and what they sent before.
@@ -459,13 +518,14 @@ Squad sizes change 5.1: a squad is any number of cards that fits the cap, front 
 
 ### 6.2 Twists
 
-The duel id seeds a twist drawn from a list; it's shown with the challenge, so both players
-know it **before** picking and building. It changes which squad is the right one each time,
+**Decided 2026-10-17:** each duel offers 3 twists (seeded from the challenge); both players ban
+one in secret while picking their squad, and the twist is drawn from the ones left (if both
+ban the same, from the two left). It changes which squad is the right one each time,
 so the same three squads don't always win. Examples:
 
-- **Fog:** Assassins hit 50% harder in round 1.
+- **Fog:** Warriors hit 50% harder in the first 10 seconds.
 - **Consecrated Ground:** Undead have no armor.
-- **Ambush:** everyone hits the back row first.
+- **Ambush:** Tanks don't protect anyone in the first 10 seconds.
 - **Ley Lines:** Mage splash hits two enemies behind the target.
 - **Shield Wall:** Armor takes double the usual off each hit, but everyone is slower.
 - **Blood Moon:** Beasts and Demons +25% attack.
@@ -546,7 +606,8 @@ press **Sync now** on the Board tab. Then, with as few whispers as possible, onl
 - **Per character** (`BestiaryChar`): cards, three squads, mode (normal/hardcore), alive, duels,
   rating, anti-farming counters, mob info cache.
 - **Account** (`BestiaryAccount`): Hall of the Fallen, settings, a shared mob info cache
-  (npcId -> family, classification), so alts don't need to target a mob first.
+  (npcId -> family, classification, class, level, attack speed, measured factors), so alts
+  don't need to target a mob first, and the fight log (`fights`, 4.0).
 
 Per character, because the hardcore twist is about that character's life.
 
@@ -596,7 +657,9 @@ both sides for the same seed).
   limit per squad (3.5, 5.2).
 - No card before 10 seconds of seeing that mob type fight (across fights; first decided as
   combat log data, which addons can't read on this client); cards are built from that (4.0).
-- Mob level and XP don't matter for drops (grey mobs drop cards, 4.1) or for card power (3.2).
+- Mob level and XP don't matter for drops (grey mobs drop cards, 4.1). ~~Or for card power (3.2)~~:
+  dropped 2026-10-17, cards copy the real mob's measured strength (4.0), level included.
+- No card for a mob whose casts were only resisted and whose spells are unknown (4.0).
 - Studying counts the mob fighting anyone, as long as we can see it (4.0).
 - No daily drop cap (4.2).
 - Starter boost: drops x5 under 10 cards, then fading with diminishing returns, gone at 40 (3.3).
@@ -604,8 +667,10 @@ both sides for the same seed).
 - Drops show as an alert like the loss of control alert, centered in the upper half (9).
 - Three prepared squads per player; both pick one in secret before a duel (6).
 - A perfect counter wins easily (3.5).
-- Power cap per duel, picked by the challenger (6). **For now one fixed cap of 100** (decided);
-  picking a cap comes later.
+- Power cap per duel, picked by the challenger (6). ~~One fixed cap of 100~~: since 2026-10-17
+  power is the card's level and the cap the sum of levels, 5 x your level (3.2).
+- Card levels (3.2): start at the mob's level, +1 every 5 duels (won or lost, sparring too),
+  at most 3 above your level, 60 (named 63).
 - From Warcry: squad size limited only by the power cap, a leader, keywords, twists, roster limits, cards getting
   worn out (6.1). No battle groups, no wild dice, no XP for now.
 - Stamina per card: drained by health lost in duels, refilled by resting, 2 duels out at 0
@@ -613,12 +678,22 @@ both sides for the same seed).
 - You see nothing of the opponent's squads before the fight, only the twist (6).
 - Death: hardcore loses the whole bestiary; normal has no penalty (7).
 
+- Turn-based fights (5.2, 2026-10-17): players pick each card's action and target, turns on a
+  virtual clock by each mob's real attack time (no rounds), fights at 4x pace, Tanks block
+  attacks and spells, squad order doesn't matter. Assassin renamed Warrior. Spells are the mob's real spells (fine tuning open).
+- Duels have no timers and survive reloads and being offline (6). One game at a time. 3 twists on offer, each
+  player bans one, the twist is drawn from the rest (6.2). The sparring partner plays simply.
+- Stars are their own drop (3.3); every duel counts toward card levels, sparring too (3.2).
+- Cards follow what's learned about their mob (2026-10-17): type, signature spell and art are
+  built again after every fight and at login (a known spell stays until another is used more).
+
 ## 12. Open questions
 
 1. Fight rules: the proposal in 5.2, then balance with headless runs.
 2. Single fight or best of 3 (6).
-3. Cap sizes beyond the fixed 100 (6); stamina numbers (6.3).
-4. Stars: how many copies per star (3.3), after 1.
+3. Cap per level (5 x your level for now, 3.2); stamina numbers (6.3); combat type balance with
+   real stats.
+4. ~~Stars: how many copies per star~~: stars are their own drop now (3.3).
 5. Abilities, after the prototype.
 
 ## 13. Prototype (no more mockup)

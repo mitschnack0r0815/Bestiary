@@ -18,7 +18,9 @@ local summary = page:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 summary:SetPoint("LEFT", title, "RIGHT", 14, 0)
 local help = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 help:SetPoint("TOPLEFT", 72, -56)
-help:SetText("Rarest first. Mob types you're still studying are on the Studying tab.")
+help:SetText("Mob types you're still studying are on the Studying tab.")
+local sortButton = ns.SortButton(page, 120)
+sortButton:SetPoint("TOPRIGHT", -16, -50)
 
 local cardInset = CreateFrame("Frame", nil, page, INSET)
 cardInset:SetPoint("TOPLEFT", 8, -76)
@@ -36,6 +38,7 @@ empty:SetText("No cards yet. Go fight something!")
 local cards = {}
 
 local function Refresh()
+	sortButton:Update()
 	local collection = ns.Collection()
 	for i, view in ipairs(collection) do
 		local card = cards[i]

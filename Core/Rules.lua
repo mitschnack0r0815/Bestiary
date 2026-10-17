@@ -23,35 +23,36 @@ ns.FAMILIES = {
 	Mechanical = { icon = "Interface\\Icons\\INV_Gizmo_02", color = { 0.7, 0.8, 0.9 } },
 }
 
--- Combat types (3.5): how the power budget turns into stats, and the look
+-- Combat types (3.5): how a card fights (its stats and attack time come from the real mob) and
+-- its look. Warrior was called Assassin until 2026-10-17.
 ns.TYPES = {
 	Tank = {
 		icon = "Interface\\Icons\\INV_Shield_06", color = { 0.6, 0.75, 1 },
-		health = 1.6, attack = 0.16, speed = 3, armor = 0.4,
-		leader = "Leader: Tank allies +2 armor",
+		leader = "Leader: Tank allies +20% armor",
 	},
 	Mage = {
 		icon = "Interface\\Icons\\Spell_Fire_FlameBolt", color = { 1, 0.45, 0.2 },
-		health = 0.7, attack = 0.30, speed = 5, armor = 0,
-		leader = "Leader: Mage allies +15% attack",
+		leader = "Leader: Mage allies +15% spell damage",
 	},
-	Assassin = {
-		icon = "Interface\\Icons\\Ability_BackStab", color = { 0.75, 1, 0.4 },
-		health = 0.9, attack = 0.24, speed = 8, armor = 0,
-		leader = "Leader: Assassin allies +2 speed in round 1",
+	Warrior = {
+		icon = "Interface\\Icons\\Ability_Warrior_Charge", color = { 0.75, 1, 0.4 },
+		leader = "Leader: Warrior allies attack 10% faster",
 	},
 	-- Built like Mage, heals instead of damaging (3.5)
 	Healer = {
 		icon = "Interface\\Icons\\Spell_Holy_Heal", color = { 0.55, 1, 0.85 },
-		health = 0.7, attack = 0.30, speed = 5, armor = 0,
 		leader = "Leader: all heals +20%",
 	},
 }
-ns.MAX_SPEED = 10 -- speed runs from 1 to this
-ns.ALL_TYPES = { "Tank", "Mage", "Assassin", "Healer" }
-ns.TYPE_ORDER = { "Tank", "Mage", "Assassin" }
+ns.ALL_TYPES = { "Tank", "Mage", "Warrior", "Healer" }
+ns.TYPE_ORDER = { "Tank", "Mage", "Warrior" }
 
-ns.POWER_CAP = 100 -- one fixed cap for now, in level-like power (choosing a cap comes later)
+-- The cap: the sum of the squad's card levels may be CAP_PER_LEVEL times your level (decided:
+-- power is the sum of levels). Set again on login and level up (Squads.lua).
+function ns.PowerCap(level)
+	return ns.CAP_PER_LEVEL * math.max(1, level or UnitLevel("player") or 1)
+end
+ns.POWER_CAP = ns.PowerCap(60)
 ns.CAPS = { ns.POWER_CAP }
 
 -- Named mobs lead (decided): a card from a named mob is always its squad's leader, and a squad
@@ -74,10 +75,9 @@ function ns.SquadLeader(cards)
 	end
 end
 
--- No minimum or maximum size (decided): only the power cap counts. As many slots as the
--- weakest cards (common, 1 star: 13) fit under the cap: 7 at a cap of 100.
+-- No minimum size; at most 7 cards (the rows on screen), else only the power cap counts
 ns.MIN_SQUAD = 1
-ns.MAX_SQUAD = math.floor(ns.POWER_CAP / ns.PowerFromBudget(ns.BASE_POWER))
+ns.MAX_SQUAD = 7
 
 -- Copies (decided): a normal (Common) card that isn't named can be owned up to 3 times, and a
 -- squad can hold as many copies as you own. Everything else once.
@@ -154,35 +154,40 @@ function ns.CanLockIn(squad)
 	return true
 end
 
--- Training cards: one type, a given power, no mob behind them. For headless balance runs and
--- the sparring partner when you haven't seen enough mobs yet.
-function ns.TrainingCard(kind, power, name, n)
-	local t = ns.TYPES[kind]
-	local attack = math.max(1, math.floor(power * t.attack + 0.5))
-	return {
-		id = "training:" .. kind .. ":" .. (n or 1),
-		name = name or ("Training " .. kind), classification = "normal", family = "Humanoid", type = kind,
-		stars = 1, zone = "", power = ns.PowerFromBudget(power),
-		health = math.max(5, math.floor(power * t.health + 0.5)),
-		attack = attack, speed = t.speed, armor = math.floor(attack * t.armor + 0.5),
-		stamina = 100,
-	}
+-- Training cards: one type, the typical mob of a level, no mob behind them. For headless
+-- balance runs and the sparring partner when you haven't seen enough mobs yet.
+local TRAINING_CLASS = { Tank = "WARRIOR", Mage = "MAGE", Warrior = "WARRIOR", Healer = "PALADIN" }
+local TRAINING_SPEED = { Tank = 2.6, Mage = 2, Warrior = 1.6, Healer = 2 } -- attack times
+
+function ns.TrainingCard(kind, level, name, n)
+	local class = TRAINING_CLASS[kind]
+	local view = ns.CardView({
+		npcId = 0, name = name or ("Training " .. kind), classification = "normal", family = "Humanoid",
+		type = kind, stars = 0, zone = "", level = level, class = class, remote = "training",
+		attackSpeed = TRAINING_SPEED[kind],
+	})
+	view.id = "training:" .. kind .. ":" .. (n or 1)
+	view.npcId = nil -- no mob behind it (no portrait)
+	return view
 end
 
--- Five training cards of one type with the same total power
-function ns.TrainingSquad(kind, power)
+-- Five training cards of one type at one level
+function ns.TrainingSquad(kind, level)
 	local cards = {}
 	for i = 1, 5 do
-		cards[i] = ns.TrainingCard(kind, power / 5, nil, i)
+		cards[i] = ns.TrainingCard(kind, level, nil, i)
 	end
 	return { cards = cards }
 end
 
--- Twists (6.2): each duel draws one
+-- Twists (6.2)
+-- Each duel offers TWIST_CHOICES of them; each player bans one in secret, the twist is drawn
+-- from what's left (decided 2026-10-17)
+ns.TWIST_CHOICES = 3
 ns.TWISTS = {
 	{ key = "calm", name = "Calm Waters", text = "No twist." },
-	{ key = "fog", name = "Fog", text = "Assassins hit 50% harder in round 1." },
+	{ key = "fog", name = "Fog", text = "Warriors hit 50% harder in the first 10 seconds." },
 	{ key = "consecrated", name = "Consecrated Ground", text = "Undead have no armor." },
-	{ key = "ambush", name = "Ambush", text = "Everyone hits the back row first." },
-	{ key = "shieldwall", name = "Shield Wall", text = "Armor counts double, everyone is slower." },
+	{ key = "ambush", name = "Ambush", text = "Tanks don't protect anyone in the first 10 seconds." },
+	{ key = "shieldwall", name = "Shield Wall", text = "Armor counts double, everyone attacks 10% slower." },
 }

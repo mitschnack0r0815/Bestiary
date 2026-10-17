@@ -28,6 +28,20 @@ local function Button(text, width)
 	return button
 end
 
+-- Everything the client tells us about the last fight (Core/LastFight.lua)
+local dumpButton = Button("Dump last fight", 130)
+dumpButton:SetPoint("TOPRIGHT", page, "TOPRIGHT", -16, -34)
+dumpButton:SetScript("OnClick", function()
+	ns.DumpLastFight()
+end)
+
+-- The fight database (Core/FightLog.lua), as text to copy out
+local fightsButton = Button("Fight log", 100)
+fightsButton:SetPoint("RIGHT", dumpButton, "LEFT", -6, 0)
+fightsButton:SetScript("OnClick", function()
+	ns.FightLog.Show()
+end)
+
 -- Mobs seen -----------------------------------------------------------------------------------
 
 local listInset = CreateFrame("Frame", nil, page, INSET)
@@ -53,85 +67,100 @@ listEmpty:SetText("No mobs seen yet. Target or mouse over one.")
 
 local RIGHT_X = LIST_WIDTH + 28
 
-local preview = Card.Create(page)
-preview:SetScale(PREVIEW_SCALE)
-preview:SetPoint("TOPLEFT", page, "TOPLEFT", RIGHT_X / PREVIEW_SCALE, -84 / PREVIEW_SCALE)
-preview:Hide()
-local nextDrop = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-nextDrop:SetPoint("TOP", page, "TOPLEFT", RIGHT_X + Card.WIDTH * PREVIEW_SCALE / 2, -84 - Card.HEIGHT * PREVIEW_SCALE - 8)
-nextDrop:SetWidth(Card.WIDTH * PREVIEW_SCALE + 40)
+-- The whole right side scrolls: the details can get long
+local rightScroll = CreateFrame("ScrollFrame", nil, page, "UIPanelScrollFrameTemplate")
+rightScroll:SetPoint("TOPLEFT", RIGHT_X - 4, -84)
+rightScroll:SetPoint("BOTTOMRIGHT", -30, 10)
+local CONTENT_WIDTH = WIDTH - RIGHT_X - 40
+local content = CreateFrame("Frame", nil, rightScroll)
+content:SetSize(CONTENT_WIDTH, 600)
+rightScroll:SetScrollChild(content)
 
-local details = page:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-details:SetPoint("TOPLEFT", page, "TOPLEFT", RIGHT_X + Card.WIDTH * PREVIEW_SCALE + 18, -86)
-details:SetPoint("RIGHT", page, "RIGHT", -16, 0)
+local function ContentButton(text, width)
+	local button = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+	button:SetSize(width, 24)
+	button:SetText(text)
+	return button
+end
+
+-- The card it would give, the buttons to its right, the next drop under it
+local preview = Card.Create(content)
+preview:SetScale(PREVIEW_SCALE)
+preview:SetPoint("TOPLEFT", content, "TOPLEFT", 4 / PREVIEW_SCALE, 0)
+preview:Hide()
+local nextDrop = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+nextDrop:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -Card.HEIGHT * PREVIEW_SCALE - 6)
+nextDrop:SetWidth(Card.WIDTH * PREVIEW_SCALE + 8)
+
+local BUTTONS_X = Card.WIDTH * PREVIEW_SCALE + 16
+local simulateButton = ContentButton("Simulate drop", 120)
+simulateButton:SetPoint("TOPLEFT", BUTTONS_X, 0)
+local giveButton = ContentButton("Give card", 120)
+giveButton:SetPoint("TOPLEFT", simulateButton, "BOTTOMLEFT", 0, -4)
+local rebuildButton = ContentButton("Rebuild card", 120)
+rebuildButton:SetPoint("TOPLEFT", giveButton, "BOTTOMLEFT", 0, -4)
+local removeButton = ContentButton("Remove card", 120)
+removeButton:SetPoint("TOPLEFT", rebuildButton, "BOTTOMLEFT", 0, -4)
+
+local nothing = content:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+nothing:SetPoint("TOPLEFT", BUTTONS_X, -130)
+nothing:SetWidth(CONTENT_WIDTH - BUTTONS_X)
+nothing:SetJustifyH("LEFT")
+nothing:SetText("Target a mob, or pick one from the list.")
+
+-- Everything known about it, full width under the card
+local details = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+details:SetPoint("TOPLEFT", nextDrop, "BOTTOMLEFT", 0, -10)
+details:SetWidth(CONTENT_WIDTH)
 details:SetJustifyH("LEFT")
 details:SetJustifyV("TOP")
 details:SetSpacing(3)
-local nothing = page:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-nothing:SetPoint("TOP", page, "TOPLEFT", (RIGHT_X + WIDTH) / 2, -180)
-nothing:SetText("Target a mob, or pick one from the list.")
 
-local BUTTONS_Y = -84 - Card.HEIGHT * PREVIEW_SCALE - 40
-local simulateButton = Button("Simulate drop", 100)
-simulateButton:SetPoint("TOPLEFT", RIGHT_X, BUTTONS_Y)
-local giveButton = Button("Give card", 100)
-giveButton:SetPoint("LEFT", simulateButton, "RIGHT", 6, 0)
-local rebuildButton = Button("Rebuild card", 100)
-rebuildButton:SetPoint("LEFT", giveButton, "RIGHT", 6, 0)
-local removeButton = Button("Remove card", 100)
-removeButton:SetPoint("LEFT", rebuildButton, "RIGHT", 6, 0)
+local function Check(anchor, y, text, note)
+	local check = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+	check:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", -4, y)
+	local label = check.text or check.Text or check:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	label:ClearAllPoints()
+	label:SetPoint("LEFT", check, "RIGHT", 2, 1)
+	label:SetFontObject("GameFontHighlight")
+	label:SetText(text)
+	local small = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	small:SetPoint("TOPLEFT", check, "BOTTOMLEFT", 4, -2)
+	small:SetWidth(CONTENT_WIDTH - 4)
+	small:SetJustifyH("LEFT")
+	small:SetText(note)
+	return check, label, small
+end
 
-local force = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
-force:SetPoint("TOPLEFT", RIGHT_X - 4, BUTTONS_Y - 36)
-local forceText = force.text or force.Text or force:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-forceText:ClearAllPoints()
-forceText:SetPoint("LEFT", force, "RIGHT", 2, 1)
-forceText:SetFontObject("GameFontHighlight")
-forceText:SetText("Force a drop on the next kill (any mob you help kill)")
-local forceNote = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-forceNote:SetPoint("TOPLEFT", force, "BOTTOMLEFT", 4, -2)
-forceNote:SetPoint("RIGHT", page, "RIGHT", -16, 0)
-forceNote:SetJustifyH("LEFT")
-forceNote:SetText("Skips studying and the drop roll once, then turns itself off. Only for this session. The mob must have been targeted or on a nameplate so its type is known.")
-
-local boost = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
-boost:SetPoint("TOPLEFT", force, "BOTTOMLEFT", 0, -34)
-local boostText = boost.text or boost.Text or boost:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-boostText:ClearAllPoints()
-boostText:SetPoint("LEFT", boost, "RIGHT", 2, 1)
-boostText:SetFontObject("GameFontHighlight")
-boostText:SetText(("Drop chance %d%% until the next drop"):format(ns.TEST_CHANCE * 100))
-local boostNote = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-boostNote:SetPoint("TOPLEFT", boost, "BOTTOMLEFT", 4, -2)
-boostNote:SetPoint("RIGHT", page, "RIGHT", -16, 0)
-boostNote:SetJustifyH("LEFT")
-boostNote:SetText("Every kill of a studied mob rolls against this instead of the normal chance. Turns itself off after a card drops. Only for this session.")
-
+local force, forceText, forceNote = Check(details, -16, "Force a drop on the next kill (any mob you help kill)",
+	"Skips studying and the drop roll once, then turns itself off. Only for this session. The mob must have been targeted or on a nameplate so its type is known.")
+local boost, boostText, boostNote = Check(forceNote, -10, ("Drop chance %d%% until the next drop"):format(ns.TEST_CHANCE * 100),
+	"Every kill of a studied mob rolls against this instead of the normal chance. Turns itself off after a card drops. Only for this session.")
 -- Hardcore: dying loses the bestiary
-local hardcore = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
-hardcore:SetPoint("TOPLEFT", boost, "BOTTOMLEFT", 0, -34)
-local hardcoreText = hardcore.text or hardcore.Text or hardcore:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-hardcoreText:ClearAllPoints()
-hardcoreText:SetPoint("LEFT", hardcore, "RIGHT", 2, 1)
-hardcoreText:SetFontObject("GameFontHighlight")
-hardcoreText:SetText("|cffff4040Hardcore:|r lose all cards when this character dies")
-local hardcoreNote = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-hardcoreNote:SetPoint("TOPLEFT", hardcore, "BOTTOMLEFT", 4, -2)
-hardcoreNote:SetPoint("RIGHT", page, "RIGHT", -16, 0)
-hardcoreNote:SetJustifyH("LEFT")
-hardcoreNote:SetText("Every card you own is gone; your own card and what you've studied stay. Saved for this character. Feign Death doesn't count.")
+local hardcore, hardcoreText, hardcoreNote = Check(boostNote, -10, "|cffff4040Hardcore:|r lose all cards when this character dies",
+	"Every card you own is gone; your own card and what you've studied stay. Saved for this character. Feign Death doesn't count.")
 
 -- The collection
-local clearButton = Button("Clear collection", 140)
+local clearButton = ContentButton("Clear collection", 140)
 clearButton:SetPoint("TOPLEFT", hardcoreNote, "BOTTOMLEFT", -4, -14)
-local fillButton = Button("Fill with 5 basic cards", 170)
+local fillButton = ContentButton("Fill with 5 basic cards", 170)
 fillButton:SetPoint("LEFT", clearButton, "RIGHT", 8, 0)
 
-local rules = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-rules:SetPoint("BOTTOMLEFT", page, "BOTTOMLEFT", RIGHT_X, 16)
-rules:SetPoint("RIGHT", page, "RIGHT", -16, 0)
+local rules = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+rules:SetPoint("TOPLEFT", clearButton, "BOTTOMLEFT", 4, -14)
+rules:SetWidth(CONTENT_WIDTH - 4)
 rules:SetJustifyH("LEFT")
 rules:SetSpacing(2)
+
+-- The scroll height follows the content, once it's laid out
+local function FitContent()
+	C_Timer.After(0, function()
+		local top, bottom = content:GetTop(), rules:GetBottom()
+		if top and bottom then
+			content:SetHeight(math.max(10, top - bottom + 12))
+		end
+	end)
+end
 
 -- Contents ------------------------------------------------------------------------------------
 
@@ -224,6 +253,23 @@ local function Details(npcId, view, result, owned)
 	Add(("Studied %d%%  %s"):format(math.min(100, entry.seconds / ns.STUDY_SECONDS * 100),
 		ready and "|cff40ff40ready|r" or ""))
 	Add(" ")
+	Add(("|cffffd200Hit you|r  %d spells, %d melee  ·  %d poisons  ·  %d resisted"):format(entry.magicHits or 0,
+		entry.physicalHits or 0, entry.poisons or 0, entry.resists or 0))
+	-- Measured strength: factors against the typical mob of its level and class (medians, with
+	-- how many samples), and what they make at the level it was last seen
+	local measured = ns.Measured(npcId) or {}
+	local level = ns.DropLevel(npcId, info.classification)
+	local class = info.class
+	local function Value(list, base)
+		local median = ns.Median(list)
+		return median and ("%d |cff999999(x%.2f, %d)|r"):format(median * base, median, #list) or "?"
+	end
+	local hit = ns.BaseHit(level, class, info.attackSpeed)
+	local parts = { "health " .. Value(measured.health, ns.BaseHealth(level, class)), "melee " .. Value(measured.melee, hit) }
+	for spell, list in pairs(measured.spells or {}) do
+		parts[#parts + 1] = spell .. " " .. Value(list, ns.BaseHit(level, class))
+	end
+	Add(("|cffffd200Measured|r at level %d  %s"):format(level, table.concat(parts, "  ·  ")))
 	Add(("|cffffd200Seen|r  %d casts (%d heals)  ·  mana %s  ·  class %s  ·  attacks %s"):format(entry.casts,
 		entry.heals, entry.mana and "yes" or "no", entry.class and entry.class:lower() or "?",
 		entry.attackSpeed and ("every %.1f s"):format(entry.attackSpeed) or "?"))
@@ -241,16 +287,27 @@ local function Details(npcId, view, result, owned)
 	end
 	Add("|cffffd200Spells|r  " .. (#spells > 0 and table.concat(spells, ", ") or "none seen"))
 	Add(" ")
-	local kind, why = ns.TypeFrom(entry, info.family)
+	local ratio, against = ns.Sturdiness(npcId, info)
+	Add(("|cffffd200Health|r  %s%s"):format(info.maxHealth and tostring(info.maxHealth) or "?",
+		ratio and ("  |cff999999(%d%% of %s)|r"):format(ratio * 100, against) or ""))
+	local kind, why = ns.TypeFrom(entry, info.family, info, npcId)
 	Add(("|cffffd200Type|r  %s  |cff999999%s|r"):format(Colored(ns.TYPES[kind].color, kind), why))
 	if owned and owned.type ~= kind then
 		Add(("|cff999999Your card stays %s (decided when it dropped; Rebuild card updates it).|r"):format(owned.type))
 	end
-	Add(("|cffffd200Power|r  %d  ·  %d attack, %d health, %d speed%s"):format(view.power, view.attack, view.health,
-		view.speed, view.armor > 0 and (", " .. view.armor .. " armor") or ""))
+	Add(("|cffffd200Card|r  level %d  ·  %d attack, %d health, attacks every %.1f s, %d armor%s"):format(view.level, view.attack,
+		view.health, view.speed, view.armor, view.spellPower and (", %s %d (%s, %.1f s cast)"):format(view.spell or "spell",
+			view.spellPower, view.spellSource or "?", view.castTime or 0) or ""))
 	Add(("|cffffd200Owned|r  %s"):format(owned and (owned.stars .. " of " .. ns.MAX_STARS .. " stars") or "no"))
-	if result == "max" then
-		Add("|cffffd200Drop chance|r  none, already at max stars")
+	if owned then
+		local starChance = ns.StarChance(owned)
+		Add(starChance > 0 and ("|cffffd200Star chance|r  %g%% per kill"):format(starChance * 100)
+			or "|cffffd200Star chance|r  none, already at max stars")
+	end
+	if owned and not ns.CanDrop(npcId) then
+		Add("|cffffd200Drop chance|r  none, you have all the copies you can")
+	elseif ns.SpellsResisted(entry) then
+		Add("|cffffd200Drop chance|r  |cffff4040none: its spells were only resisted, unknown until one hits you|r")
 	elseif ready then
 		local chance, reason = ns.DropChance(npcId, info.classification)
 		Add(("|cffffd200Drop chance|r  %.1f%% per kill%s"):format(chance * 100,
@@ -331,6 +388,7 @@ local function Refresh()
 		.. ns.STARTER_HALF .. " cards, gone at " .. ns.STARTER_END .. ".")
 		:format(ns.STUDY_SECONDS, ns.DROP_CHANCE.normal * 100, ns.DROP_CHANCE.elite * 100, ns.DROP_CHANCE.rare * 100,
 			ns.DROP_CHANCE.rareelite * 100, ns.DROP_CHANCE.worldboss * 100, ns.GROUP_FACTOR.party, ns.GROUP_FACTOR.raid))
+	FitContent()
 end
 
 -- Actions -------------------------------------------------------------------------------------

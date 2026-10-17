@@ -19,6 +19,60 @@ local DRAGON_SIZE = 1.7 -- the dragon ring around leaders, times the art size
 local RING = "Interface\\AddOns\\Bestiary\\Media\\RingBorder"
 local COVER = "Interface\\AddOns\\Bestiary\\Media\\RingCover"
 local CARD_BG = { 0.07, 0.06, 0.06 }
+-- Paper like the spellbook's pages (this client's spellbook atlases), cut to the card's shape.
+-- Without the atlas the card stays dark.
+local PAPER_ATLASES = { "spellbook-Page-Right-C60", "spellbook-Page-Left-C60" }
+local PAPER_MARGIN = 0.22 -- cut this much off each side of the page: its edges, binding and shading
+local INK = { 0.28, 0.18, 0.08 } -- labels on the paper
+
+-- Forever's unit frame circle (the level badge): a dark disc with a gold rim. The type and family
+-- badges, the level gem and the duel's action circles use it; icons go inside its rim.
+local GOLD_CIRCLE = "UI-HUD-UnitFrame-SmallCircle"
+local GOLD_INNER = 0.68 -- the part of the circle inside the rim
+local goldCircle
+function ns.GoldCircle(texture)
+	if goldCircle == nil then
+		goldCircle = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(GOLD_CIRCLE) ~= nil or false
+	end
+	if goldCircle then
+		texture:SetAtlas(GOLD_CIRCLE)
+	end
+	return goldCircle
+end
+ns.GOLD_INNER = GOLD_INNER
+
+-- The paper: the page's file and the part of it to show, nil if this client has no such atlas
+local paper
+local function Paper()
+	if paper ~= nil then
+		return paper or nil
+	end
+	paper = false
+	if not (C_Texture and C_Texture.GetAtlasInfo) then
+		return nil
+	end
+	for _, atlas in ipairs(PAPER_ATLASES) do
+		local info = C_Texture.GetAtlasInfo(atlas)
+		if info and info.file and info.width and info.height and info.width > 0 then
+			local left, right = info.leftTexCoord, info.rightTexCoord
+			local top, bottom = info.topTexCoord, info.bottomTexCoord
+			-- the middle of the page, as tall as the card is (its width / height)
+			local want = (Card.WIDTH - 8) / (Card.HEIGHT - 8)
+			local w, h = info.width * (1 - 2 * PAPER_MARGIN), info.height * (1 - 2 * PAPER_MARGIN)
+			if w / h > want then
+				w = h * want
+			else
+				h = w / want
+			end
+			local u = (right - left) * (w / info.width)
+			local v = (bottom - top) * (h / info.height)
+			local cu, cv = (left + right) / 2, (top + bottom) / 2
+			paper = { file = info.file, coords = { cu - u / 2, cu + u / 2, cv - v / 2, cv + v / 2 } }
+			return paper
+		end
+	end
+	return nil
+end
 ns.RING, ns.RING_COVER = RING, COVER
 local ROUND_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local STAT_COLORS = { attack = { 1, 0.45, 0.4 }, health = { 0.4, 1, 0.45 }, speed = { 1, 0.85, 0.35 } }
@@ -45,9 +99,14 @@ end
 local function Medallion(frame, size, ring, layer)
 	local holder = {}
 	holder.ring = frame:CreateTexture(nil, layer, nil, 1)
-	holder.ring:SetSize(size + 4, size + 4)
-	holder.ring:SetColorTexture(1, 1, 1)
-	Round(frame, holder.ring)
+	if ns.GoldCircle(holder.ring) then
+		holder.gold = true -- the gold circle around it; no color of its own
+		holder.ring:SetSize(size / GOLD_INNER, size / GOLD_INNER)
+	else
+		holder.ring:SetSize(size + 4, size + 4)
+		holder.ring:SetColorTexture(1, 1, 1)
+		Round(frame, holder.ring)
+	end
 	holder.icon = frame:CreateTexture(nil, layer, nil, 2)
 	holder.icon:SetSize(size, size)
 	holder.icon:SetPoint("CENTER", holder.ring)
@@ -176,6 +235,14 @@ function Card.Create(parent)
 		card:SetBackdrop(BACKDROP)
 		card:SetBackdropColor(0.07, 0.06, 0.06, 0.96)
 	end
+	local page = Paper()
+	if page then
+		card.paper = card:CreateTexture(nil, "BACKGROUND", nil, 2)
+		card.paper:SetPoint("TOPLEFT", 4, -4)
+		card.paper:SetPoint("BOTTOMRIGHT", -4, 4)
+		card.paper:SetTexture(page.file)
+		card.paper:SetTexCoord(unpack(page.coords))
+	end
 
 	card.name = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	card.name:SetPoint("TOPLEFT", 6, -6)
@@ -183,6 +250,13 @@ function Card.Create(parent)
 	card.name:SetHeight(22)
 	card.name:SetJustifyV("MIDDLE")
 	card.name:SetWordWrap(true)
+	local Outline = function(text)
+		if card.paper then
+			local font, size = text:GetFont()
+			text:SetFont(font, size, "OUTLINE") -- colored text stays readable on the paper
+		end
+	end
+	Outline(card.name)
 
 	-- Round art: the icon (or a dark backdrop) cut round; the ring goes on the layer above the model
 	card.art = card:CreateTexture(nil, "ARTWORK", nil, 2)
@@ -212,6 +286,33 @@ function Card.Create(parent)
 	card.ring:SetSize(ART + 6, ART + 6)
 	card.ring:SetPoint("CENTER", card.art)
 	card.ring:SetTexture(RING)
+	if page and top.CreateMaskTexture then
+		-- On paper: the cover is that same piece of paper with a round hole for the portrait, so
+		-- it can't be seen; around the hole the gold rim of the level circle (decided)
+		local hole = top:CreateMaskTexture()
+		hole:SetTexture(COVER, "CLAMP", "CLAMP") -- clamped: opaque everywhere but the hole
+		hole:SetSize(ART + 6, ART + 6)
+		hole:SetPoint("CENTER", card.art)
+		local box = ART + 8 -- just over the model: any bigger and it would cover the name
+		local u0, u1, v0, v1 = unpack(page.coords)
+		local innerW, innerH = Card.WIDTH - 8, Card.HEIGHT - 8
+		local x0 = (Card.WIDTH / 2 - box / 2 - 4) / innerW
+		local y0 = (34 + ART / 2 - box / 2 - 4) / innerH
+		local fw, fh = box / innerW, box / innerH
+		card.cover:SetTexture(page.file)
+		card.cover:SetTexCoord(u0 + (u1 - u0) * x0, u0 + (u1 - u0) * (x0 + fw), v0 + (v1 - v0) * y0, v0 + (v1 - v0) * (y0 + fh))
+		card.cover:SetSize(box, box)
+		card.cover:AddMaskTexture(hole)
+		card.paperCover = true
+		local gold = top:CreateTexture(nil, "ARTWORK", nil, 3)
+		if ns.GoldCircle(gold) then
+			gold:SetSize(ART / GOLD_INNER, ART / GOLD_INNER)
+			gold:SetPoint("CENTER", card.art)
+			gold:AddMaskTexture(hole) -- only the rim: its dark middle would hide the portrait
+			card.goldRing = gold
+			card.ring:Hide()
+		end
+	end
 
 	card.badge = Medallion(top, BADGE, nil, "OVERLAY")
 	card.badge.ring:SetPoint("CENTER", card.art, "BOTTOMLEFT", 2, 3)
@@ -229,13 +330,17 @@ function Card.Create(parent)
 	card.powerRim = top:CreateTexture(nil, "OVERLAY", nil, 3)
 	card.powerRim:SetSize(24, 24)
 	card.powerRim:SetPoint("CENTER", card, "TOPRIGHT", -13, -13) -- the card's top right corner
-	card.powerRim:SetColorTexture(1, 0.82, 0.2)
-	Round(top, card.powerRim)
-	card.powerBg = top:CreateTexture(nil, "OVERLAY", nil, 4)
-	card.powerBg:SetSize(21, 21)
-	card.powerBg:SetPoint("CENTER", card.powerRim)
-	card.powerBg:SetColorTexture(0.08, 0.06, 0.04)
-	Round(top, card.powerBg)
+	if ns.GoldCircle(card.powerRim) then
+		card.powerRim:SetSize(27, 27) -- like the level on the player frame
+	else
+		card.powerRim:SetColorTexture(1, 0.82, 0.2)
+		Round(top, card.powerRim)
+		card.powerBg = top:CreateTexture(nil, "OVERLAY", nil, 4)
+		card.powerBg:SetSize(21, 21)
+		card.powerBg:SetPoint("CENTER", card.powerRim)
+		card.powerBg:SetColorTexture(0.08, 0.06, 0.04)
+		Round(top, card.powerBg)
+	end
 	card.power = top:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
 	card.power:SetPoint("CENTER", card.powerRim, "CENTER", 0, 0)
 	card.power:SetTextColor(1, 0.82, 0.2)
@@ -267,11 +372,15 @@ function Card.Create(parent)
 		local text = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		text:SetPoint("BOTTOM", card, "BOTTOMLEFT", 6 + (Card.WIDTH - 12) * (i * 2 - 1) / 6, 11)
 		text:SetTextColor(unpack(STAT_COLORS[stat]))
+		Outline(text)
 		card.stats[stat] = text
 		local label = card:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 		label:SetPoint("BOTTOM", text, "TOP", 0, 0)
 		label:SetText(({ attack = "ATK", health = "HP", speed = "SPD" })[stat])
 		label:SetScale(0.85)
+		if card.paper then
+			label:SetTextColor(unpack(INK))
+		end
 	end
 
 	card.bar = CreateFrame("StatusBar", nil, card)
@@ -364,12 +473,18 @@ function Mixin:SetCard(data, bar)
 	self.name:SetText(data.name)
 	self.name:SetTextColor(r, g, b)
 	self.ring:SetVertexColor(r, g, b, 1)
-	self.cover:SetVertexColor(CARD_BG[1], CARD_BG[2], CARD_BG[3], 1) -- matches the card behind it
+	if self.paperCover then
+		self.cover:SetVertexColor(1, 1, 1, 1) -- the paper itself
+	else
+		self.cover:SetVertexColor(CARD_BG[1], CARD_BG[2], CARD_BG[3], 1) -- matches the card behind it
+	end
 	self.art:SetTexture(data.art or family.icon)
 	ns.SetPortrait(self.model, self.art, data)
-	self.badge.ring:SetVertexColor(unpack(kind.color))
+	if not self.badge.gold then
+		self.badge.ring:SetVertexColor(unpack(kind.color))
+		self.familyBadge.ring:SetVertexColor(unpack(family.color))
+	end
 	self.badge.icon:SetTexture(kind.icon)
-	self.familyBadge.ring:SetVertexColor(unpack(family.color))
 	self.familyBadge.icon:SetTexture(family.icon)
 	self.power:SetText(data.power)
 	self:SetCount(nil)
@@ -377,9 +492,9 @@ function Mixin:SetCard(data, bar)
 	for i, star in ipairs(self.stars) do
 		star:SetShown(i <= data.stars)
 	end
-	self.stats.attack:SetText(data.attack)
+	self.stats.attack:SetText(ns.CardAttack(data)) -- casters and healers: their spell
 	self.stats.health:SetText(data.health)
-	self.stats.speed:SetText(data.speed)
+	self.stats.speed:SetText(("%.1f"):format(data.speed)) -- its attack time in seconds
 
 	self.barKind = bar
 	self.maxHp = nil
@@ -400,6 +515,67 @@ function Mixin:SetCard(data, bar)
 	self:SetDead(false)
 	self:SetLeader(ns.IsNamed(data)) -- named cards always lead
 	self:SetSelected(false)
+end
+
+-- The card whose turn it is: sparks wander around its border, like the game's autocast shine
+-- on pet action buttons (two "worms" of sparks, each a head and a fading tail)
+local SPARK = "Interface\\ItemSocketingFrame\\UI-ItemSockets"
+local SPARK_COORDS = { 0.3984375, 0.4453125, 0.40234375, 0.44921875 }
+local WORMS, SPARKS_PER_WORM = 2, 7
+local LAPS_PER_SECOND = 0.3
+local SPARK_GAP = 5 -- pixels between the sparks of a worm
+
+-- A point on the border, distance d clockwise from the top left corner
+local function OnBorder(d, w, h)
+	if d < w then
+		return d, 0
+	elseif d < w + h then
+		return w, d - w
+	elseif d < 2 * w + h then
+		return w - (d - w - h), h
+	end
+	return 0, h - (d - 2 * w - h)
+end
+
+local function MoveSparks(shine, elapsed)
+	shine.time = shine.time + elapsed
+	local w, h = shine:GetWidth(), shine:GetHeight()
+	if not w or w <= 0 then
+		return
+	end
+	local around = 2 * (w + h)
+	for _, spark in ipairs(shine.sparks) do
+		local d = ((shine.time * LAPS_PER_SECOND + (spark.worm - 1) / WORMS) * around - spark.lag * SPARK_GAP) % around
+		local x, y = OnBorder(d, w, h)
+		spark.texture:SetPoint("CENTER", shine, "TOPLEFT", x, -y)
+	end
+end
+
+function Mixin:SetActive(active)
+	if active and not self.shine then
+		local shine = CreateFrame("Frame", nil, self)
+		shine:SetPoint("TOPLEFT", 2, -2)
+		shine:SetPoint("BOTTOMRIGHT", -2, 2)
+		shine:SetFrameLevel(self:GetFrameLevel() + 6)
+		shine.sparks, shine.time = {}, 0
+		for worm = 1, WORMS do
+			for lag = 0, SPARKS_PER_WORM - 1 do
+				local texture = shine:CreateTexture(nil, "OVERLAY")
+				texture:SetTexture(SPARK)
+				texture:SetTexCoord(unpack(SPARK_COORDS))
+				texture:SetBlendMode("ADD")
+				local size = 16 - lag * 1.6
+				texture:SetSize(size, size)
+				texture:SetVertexColor(1, 0.85, 0.35, 1 - lag * 0.1)
+				shine.sparks[#shine.sparks + 1] = { texture = texture, worm = worm, lag = lag }
+			end
+		end
+		shine:SetScript("OnUpdate", MoveSparks)
+		self.shine = shine
+	end
+	if self.shine then
+		self.shine:SetShown(active)
+	end
 end
 
 -- "2x": how many copies (or how many are still free); nil hides it
@@ -423,7 +599,7 @@ end
 
 function Mixin:SetLeader(leader)
 	self.dragon:SetShown(leader)
-	self.ring:SetShown(not leader) -- the dragon is the leader's ring
+	self.ring:SetShown(not leader and not self.goldRing) -- the dragon is the leader's ring
 end
 
 function Mixin:ShowTooltip()
@@ -440,11 +616,22 @@ function Card.ShowTooltipFor(owner, data)
 	GameTooltip:AddLine(data.name, unpack(rarity.color))
 	GameTooltip:AddLine(("%s  ·  %s"):format(data.family, rarity.name), 1, 1, 1)
 	GameTooltip:AddLine(data.type, unpack(kind.color))
-	GameTooltip:AddLine(("%d of 5 stars  ·  Power %d"):format(data.stars, data.power), 0.8, 0.8, 0.8)
+	local saved = not data.remote and not data.player and ns.SavedCard(data)
+	local progress = ""
+	if saved then
+		progress = data.level >= ns.LevelCap(saved) and "  (capped)"
+			or ("  (%d/%d duels to the next)"):format(saved.games or 0, ns.GAMES_PER_LEVEL)
+	end
+	GameTooltip:AddLine(("Level %d%s  ·  %d of %d stars (+%d%%)"):format(data.level or data.power, progress, data.stars,
+		ns.MAX_STARS, data.stars * ns.STAR_BONUS * 100 + 0.5), 0.8, 0.8, 0.8)
 	GameTooltip:AddLine(" ")
 	GameTooltip:AddDoubleLine("Attack", data.attack, 1, 1, 1, 1, 1, 1)
+	if data.spellPower then
+		GameTooltip:AddDoubleLine(data.type == "Healer" and ("Heal: " .. (data.spell or "Heal")) or ("Spell: " .. (data.spell or "Spell")),
+			data.spellPower, 1, 1, 1, 1, 1, 1)
+	end
 	GameTooltip:AddDoubleLine("Health", data.health, 1, 1, 1, 1, 1, 1)
-	GameTooltip:AddDoubleLine("Speed", data.speed .. " / " .. ns.MAX_SPEED, 1, 1, 1, 1, 1, 1)
+	GameTooltip:AddDoubleLine("Attack time", ("%.1f s"):format(data.speed), 1, 1, 1, 1, 1, 1)
 	if data.armor > 0 then
 		GameTooltip:AddDoubleLine("Armor", data.armor, 1, 1, 1, 1, 1, 1)
 	end

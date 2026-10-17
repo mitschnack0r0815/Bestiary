@@ -11,7 +11,22 @@ ns.DROP_CHANCE = { normal = 0.04, elite = 0.15, rare = 0.25, rareelite = 0.35, w
 ns.FIRST_DROP_SURE = { rare = true, rareelite = true, worldboss = true }
 ns.GROUP_FACTOR = { solo = 1, party = 0.75, raid = 0.25 }
 ns.FARM_WINDOW = 3600 -- each card from the same mob type in this many seconds halves the chance
+-- Stars (decided 2026-10-17): 0 to 5. Once you own a mob's card, every kill of that mob can add
+-- a star: STAR_CHANCE for the first, half of that for each next (10%, 5%, 2.5%, 1.25%, 0.625%).
+-- Each star makes the card STAR_BONUS stronger in health and damage or healing.
 ns.MAX_STARS = 5
+ns.STAR_CHANCE = 0.10
+function ns.StarChance(card)
+	local stars = card.stars or 0
+	if card.player or stars >= ns.MAX_STARS then
+		return 0
+	end
+	return ns.STAR_CHANCE * 0.5 ^ stars
+end
+-- Bad luck protection: every kill of a studied mob type that drops nothing raises its chance by
+-- DRY_BONUS of the base chance, up to DRY_MAX times; its next card resets it
+ns.DRY_BONUS = 0.2
+ns.DRY_MAX = 5
 ns.TEST_CHANCE = 0.9 -- Test tab: drop chance while "until the next drop" is on
 -- Starter boost: drop chances x5 (500%) until you own STARTER_CARDS different cards, then the
 -- extra halves every STARTER_HALF more cards (x3 at 15, x2 at 20, x1.5 at 25 ...), gone at
@@ -21,17 +36,25 @@ ns.STARTER_CARDS = 10
 ns.STARTER_HALF = 5
 ns.STARTER_END = 40
 
--- Card power (3.2): level doesn't count
-ns.BASE_POWER = 60 -- stat budget of a common 1-star card
+-- Card levels (3.2, decided 2026-10-17): a card is the real mob at its level. It starts at the
+-- mob's level and gains one every GAMES_PER_LEVEL duels, won or lost (sparring too), at most
+-- LEVELS_ABOVE_PLAYER above yours, up to 60 (named cards 63). Power is the card's level, and a
+-- squad's cap is the sum of levels: CAP_PER_LEVEL times your level.
+ns.GAMES_PER_LEVEL = 5
+ns.LEVELS_ABOVE_PLAYER = 3
+ns.MAX_NORMAL_LEVEL = 60
+ns.CAP_PER_LEVEL = 5
+ns.STAR_BONUS = 0.03
 
--- The power shown on cards and counted against the cap reads like a level: 0 to 63, where a
--- Legendary card with 5 stars (the biggest budget) is 63. Stats still come from the budget.
-ns.MAX_POWER = 63
-function ns.PowerFromBudget(budget)
-	local most = ns.BASE_POWER * ns.RARITIES.worldboss.factor * (1 + ns.STAR_BONUS * (ns.MAX_STARS - 1))
-	return math.max(1, math.floor(budget / most * ns.MAX_POWER + 0.5))
-end
-ns.STAR_BONUS = 0.15
+-- Until a mob type is measured (health from the damage meter, melee and spell hits on you), its
+-- factors against the typical mob of its level and class are guessed by rarity. Guesses.
+ns.GUESSED_FACTORS = {
+	normal = { health = 1, damage = 1 },
+	elite = { health = 3, damage = 1.75 },
+	rare = { health = 1.4, damage = 1.2 },
+	rareelite = { health = 3.5, damage = 2 },
+	worldboss = { health = 8, damage = 3 },
+}
 
 -- Classification as the game reports it -> our rarity key. Skull-level mobs (UnitLevel -1) count
 -- as bosses too.
@@ -52,6 +75,33 @@ ns.CREATURE_TYPES = {
 	["Elementar"] = "Elemental", ["Riese"] = "Giant", ["Mechanisch"] = "Mechanical",
 	["Kleintier"] = false, ["Nicht spezifiziert"] = false,
 }
+
+-- Our own Lua errors are kept (BestiaryAccount.errors, saved on /reload or logout) so they can
+-- be read later; /bst errors prints them. Other addons' errors are left alone; every error still
+-- goes on to the game's normal handler.
+local pendingErrors = {}
+ns.errors = pendingErrors
+if geterrorhandler and seterrorhandler then
+	local original = geterrorhandler()
+	seterrorhandler(function(msg, ...)
+		if type(msg) == "string" and msg:find("Bestiary") then
+			local list = (BestiaryAccount and BestiaryAccount.errors) or pendingErrors
+			local found
+			for _, entry in ipairs(list) do
+				if entry.msg == msg then
+					found = entry
+				end
+			end
+			if found then
+				found.count = found.count + 1
+			elseif #list < 20 then
+				list[#list + 1] = { msg = msg, count = 1, at = time and time() or 0,
+					stack = debugstack and debugstack(2, 12, 0) or nil }
+			end
+		end
+		return original(msg, ...)
+	end)
+end
 
 function ns.Print(msg)
 	print("|cffc0ff60Bestiary:|r " .. msg)
