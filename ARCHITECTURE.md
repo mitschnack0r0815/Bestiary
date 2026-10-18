@@ -510,6 +510,79 @@ hits the Watcher right behind it, so both tanks melt at once. Alice's only answe
 Pillager, gets a single cast off before the casters trade it away. That's the hidden pick:
 Alice built well against Assassins and would be crushed by Mage.
 
+### 5.5 Battles: Pokémon style (decided 2026-10-18, branch `pokemon-battles`)
+
+A second fight mode next to the duels, with **its own rules**: it shares nothing with the board
+fight (5.2) but the cards themselves (stats, type, family, abilities, signature spell). Engine
+`Core/Battle.lua`, type chart `Core/TypeChart.lua`, teams `Core/Teams.lua`, protocol
+`Core/BattleDuel.lua`, pages `UI/Teams.lua` and `UI/Battle.lua`. All numbers are first guesses;
+balancing comes from playing (decided: not from AI simulations).
+
+**Teams.** Own **Teams tab**: three teams of **up to 3 cards** (decided 2026-10-18: 3 v 3 for now, quicker to test; `Battle.MAX_TEAM`), kept apart from the squads
+(`BestiaryChar.teams`). **No power cap and no leaders** in this mode (decided): named cards don't
+lead, and the cards show no leader frame, cap or stamina here. Copies like in squads.
+
+**Hidden teams (decided).** Both pick a team **and the card it leads with** in secret (commit
+and reveal), no team preview. Of the other side **only the card on the field is shown**: their
+bench stays face down ("?", "Field", "KO"), and the log names their bench cards only as "a card
+on their bench". Everything is shown once the battle is over. (Both clients need both teams to
+rebuild the battle, so this is hidden on the page, not on the wire.)
+
+**One card each on the field**, the others on the bench. **Strict alternating turns**: the faster
+lead (attack time; casters: cast time) starts, a tie by the seed. A turn is one move or a switch:
+- **Attack** (melee, armor counts), **Spell** (ignores armor; Mages cast every turn, the others'
+  spell waits 2 turns), **abilities** (each hits for half the card's damage and puts its effect on
+  the enemy; cooldown 3-4 turns), Tanks **Guard** (next hit halved), Healers **Heal** (itself),
+  **Mend** (one bench card you click) and **Restore** (every hurt bench card, half a heal each).
+- **Switch:** click a card of your bench; costs the turn, the new card takes the next hit.
+- A card knocked out: its owner **picks which one comes in next** (the cards that can come in
+  sparkle), for free, then it's their turn.
+- Win: all enemy cards out. After 100 turns the side with more health left in percent wins.
+  Resign is a loss.
+
+**Damage per turn** is damage per second times 4 s (`Battle.TURN`), so fast and slow attackers
+are even per turn and speed only decides who starts. Armor like the game (at most 75%).
+- **Tanks block:** physical hits on them x0.7 (after armor); no slow turns in battles.
+- **Healers** are weak fighters (half melee); their strength is healing the bench (decided).
+  Each heal of a card is 80% of the one before.
+- **Effects** last some of the target's turns (from their real duration, 4 s a turn, capped):
+  stun skips a turn, fear skips until hit, silence (no spells or heals), disarm (no attacks),
+  slow (30% less damage), poison (15% of the poisoner's damage per turn at the start of each of
+  its side's turns, **also on the bench**), enrage (passive, +50% below 30% health). Leaving
+  the field clears everything but poison. **Control immunity:** after a stun, fear, silence or
+  disarm the card can't be controlled again until 2 of its turns after it ends (no stun locks by
+  switching in fresh stunners).
+
+**Type chart (families):** hits on a family the attacker is strong against x1.4, hits on one
+strong against it x0.75. Each is strong against two:
+
+| Family | Strong against |
+|---|---|
+| Humanoid | Undead, Demon |
+| Undead | Beast, Giant |
+| Beast | Humanoid, Elemental |
+| Demon | Humanoid, Mechanical |
+| Elemental | Undead, Mechanical |
+| Mechanical | Beast, Dragonkin |
+| Giant | Dragonkin, Elemental |
+| Dragonkin | Giant, Demon |
+
+Giant and Dragonkin are rivals (strong against each other). Combat types keep their roles: in
+headless tests a team of one type beats the type it should (Warrior > Mage > Tank > Warrior).
+
+**XP, no stamina (decided).** Every card that was on the field gets 20 XP, +15 per knockout, +15
+if its side won; 100 XP is a level (up to the card's level cap). Shown under the cards on the
+Teams tab and in the tooltip. Battles don't touch stamina, ratings or the duel record; they
+keep their own win/loss record (`BestiaryChar.battleRecord`).
+
+**Protocol** (`Bc` challenge, `Ba` commit, `Bt`/`Bu` team and lead, `Bm` moves, `Bq` catch-up,
+`Bx` end; two letters so duels and the board ignore them; battle protocol 3): asynchronous like
+duels, one battle at a time, saved per character (`BestiaryChar.battles`), rebuilt from teams,
+leads, seed and moves. **Tested headless:** two clients with up to 50% of whispers lost and
+random reloads: every game ended with the same moves and winner on both sides; the Battle page
+drawn through a whole sparring battle. Sparring partner: simple (type matchups, heals, knockouts).
+`/bst battle [name]`, `/bst teams`, and a Battle button on the Friends tab.
+
 ## 6. Duels
 
 Turn based and **asynchronous, no timers** (decided): a game survives reloads, logouts and

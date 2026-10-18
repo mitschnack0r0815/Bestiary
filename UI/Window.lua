@@ -557,6 +557,11 @@ SlashCmdList["BESTIARY"] = function(msg)
 	elseif msg == "duel" or msg:find("^duel ") then
 		local name = strtrim(raw:sub(6))
 		ns.ChallengePlayer(name ~= "" and name or nil)
+	elseif msg == "battle" or msg:find("^battle ") then
+		local name = strtrim(raw:sub(8))
+		ns.ChallengeBattle(name ~= "" and name or nil)
+	elseif msg == "teams" then
+		ns.Show("Teams")
 	elseif msg == "errors" or msg == "errors clear" then
 		local list = BestiaryAccount and BestiaryAccount.errors or ns.errors
 		if msg == "errors clear" then
@@ -584,6 +589,6 @@ SlashCmdList["BESTIARY"] = function(msg)
 	elseif msg == "" then
 		ns.Toggle()
 	else
-		ns.Print("/bst: open  ·  /bst mob: what's known about your target  ·  /bst debug: print kills and drop rolls  ·  /bst duel [name]: challenge a player (or your target)  ·  /bst friends  ·  /bst board  ·  /bst study  ·  /bst stats  ·  /bst info: how it works  ·  /bst test: test drops  ·  /bst lastfight: dump the last fight  ·  /bst fights: the fight log  ·  /bst minimap")
+		ns.Print("/bst: open  ·  /bst mob: what's known about your target  ·  /bst debug: print kills and drop rolls  ·  /bst duel [name]: challenge a player (or your target)  ·  /bst battle [name]: a Pokémon-style battle  ·  /bst teams  ·  /bst friends  ·  /bst board  ·  /bst study  ·  /bst stats  ·  /bst info: how it works  ·  /bst test: test drops  ·  /bst lastfight: dump the last fight  ·  /bst fights: the fight log  ·  /bst minimap")
 	end
 end

@@ -606,7 +606,7 @@ function Mixin:SetCard(data, bar)
 		self.tiredText:SetText(("Exhausted\n%d duels"):format(data.exhausted))
 	end
 	self:SetDead(false)
-	self:SetLeader(ns.IsNamed(data), data.classification) -- named cards always lead
+	self:SetLeader(ns.IsNamed(data) and not data.battle, data.classification) -- named cards always lead (battles: no leaders)
 	self:SetSelected(false)
 end
 
@@ -749,11 +749,17 @@ function Card.ShowTooltipFor(owner, data)
 	-- the badges are only icons: their names
 	GameTooltip:AddLine(("%s  ·  %s  ·  |cff%02x%02x%02x%s|r"):format(rarity.name, data.family,
 		kind.color[1] * 255, kind.color[2] * 255, kind.color[3] * 255, data.type), 1, 1, 1)
-	GameTooltip:AddLine(("Power %d (counts against the squad cap)"):format(data.power), 1, 0.82, 0.2)
+	if not data.battle then -- battles: no cap, no leaders, no stamina (data.battle: shown for a battle)
+		GameTooltip:AddLine(("Power %d (counts against the squad cap)"):format(data.power), 1, 0.82, 0.2)
+	end
 	local saved = not data.remote and not data.player and ns.SavedCard(data)
 	if saved then
 		GameTooltip:AddLine(data.level >= ns.LevelCap(saved) and "Can't level higher for now"
 			or ("%d of %d duels to the next level"):format(saved.games or 0, ns.GAMES_PER_LEVEL), 0.8, 0.8, 0.8)
+		if data.level < ns.LevelCap(saved) and ns.CardXp then
+			local xp, need = ns.CardXp(saved)
+			GameTooltip:AddLine(("Battle XP: %d / %d to the next level"):format(xp, need), 0.69, 0.5, 1)
+		end
 	end
 	-- a Tank's or Warrior's spell isn't on the card (casters' and healers' is their ATK/HEAL)
 	if data.spellPower and data.type ~= "Mage" and data.type ~= "Healer" then
@@ -773,8 +779,10 @@ function Card.ShowTooltipFor(owner, data)
 		GameTooltip:AddLine(("|cffffd200%s|r%s"):format(name ~= def.name and (def.name .. ": " .. name) or def.name, how), 1, 1, 1)
 		GameTooltip:AddLine("   " .. ns.AbilityText(ability, data), 0.8, 0.8, 0.8, true)
 	end
-	GameTooltip:AddDoubleLine("Stamina", data.stamina .. " / 100", 1, 1, 1, 1, 1, 1)
-	if ns.IsNamed(data) then
+	if not data.battle then
+		GameTooltip:AddDoubleLine("Stamina", data.stamina .. " / 100", 1, 1, 1, 1, 1, 1)
+	end
+	if ns.IsNamed(data) and not data.battle then
 		GameTooltip:AddLine(" ")
 		GameTooltip:AddLine(data.player and (data.remote and (data.remote .. " themselves: always leads, one leader per squad")
 			or "That's you: always leads its squad, one leader per squad")

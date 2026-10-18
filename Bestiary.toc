@@ -7,20 +7,24 @@
 ## SavedVariablesPerCharacter: BestiaryChar
 
 # Rules, studying mobs (unit API, the combat log is closed to addons), cards, drops, fights,
-# squads and stats (see ARCHITECTURE.md)
+# squads, battles (Pokémon style: teams of 3, one card each on the field) and stats (see ARCHITECTURE.md)
 Core\Config.lua
 Core\Named.lua
 Core\LevelStats.lua
 Core\Rules.lua
 Core\Fight.lua
 Core\FightLog.lua
+Core\TypeChart.lua
+Core\Battle.lua
 Core\Tracker.lua
 Core\Abilities.lua
 Core\Cards.lua
 Core\Stats.lua
 Core\Squads.lua
+Core\Teams.lua
 Core\Comm.lua
 Core\Duel.lua
+Core\BattleDuel.lua
 Core\Board.lua
 Core\Hardcore.lua
 Core\LastFight.lua
@@ -29,6 +33,8 @@ Core\LastFight.lua
 UI\Card.lua
 UI\Window.lua
 UI\Duel.lua
+UI\Teams.lua
+UI\Battle.lua
 UI\Collection.lua
 UI\Studying.lua
 UI\Board.lua
